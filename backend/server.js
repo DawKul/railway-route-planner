@@ -15,7 +15,7 @@ app.get('/', (req, res) => {
   res.send('Railway backend dziala');
 });
 
-// Endpoint testowy: sprawdza wersje PostGIS
+// Test: wersja PostGIS
 app.get('/test', async (req, res) => {
   try {
     const result = await db.any('SELECT PostGIS_Version();');
@@ -40,7 +40,7 @@ app.post('/register', async (req, res) => {
 
     res.status(201).send('Uzytkownik zarejestrowany');
   } catch (err) {
-    console.error('Blad rejestracji:', err);
+    console.error('? Blad rejestracji:', err);
     res.status(500).send('Blad rejestracji');
   }
 });
@@ -66,6 +66,42 @@ app.post('/login', async (req, res) => {
   } catch (err) {
     console.error('? Blad logowania:', err);
     res.status(500).send('Blad logowania');
+  }
+});
+
+// Zapis trasy
+app.post("/routes", async (req, res) => {
+  const { name, route, stops } = req.body;
+
+  try {
+    const geojson = JSON.stringify({
+      type: "LineString",
+      coordinates: route,
+    });
+
+    const stopsJson = JSON.stringify(stops);
+
+    await db.none(
+      `INSERT INTO routes (name, geojson, stops)
+       VALUES ($1, $2::jsonb, $3::jsonb)`,
+      [name, geojson, stopsJson]
+    );
+
+    res.status(201).send("Zapisano trase");
+  } catch (err) {
+    console.error("? Blad zapisu trasy:", err.message);
+    res.status(500).send("Blad zapisu trasy: " + err.message);
+  }
+});
+
+// Pobieranie tras
+app.get('/routes', async (req, res) => {
+  try {
+    const result = await db.any('SELECT * FROM routes ORDER BY id DESC');
+    res.json(result);
+  } catch (err) {
+    console.error("? Blad pobierania tras:", err.message);
+    res.status(500).send("Blad pobierania tras: " + err.message);
   }
 });
 
