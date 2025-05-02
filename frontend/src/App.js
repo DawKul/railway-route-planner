@@ -10,7 +10,7 @@ import AuthForm from "./AuthForm";
 
 const Simulation = ({ polylineCoords, stops, run, paused, trainType }) => {
     const map = useMap();
-    const markerRef = useRef(null);
+    const markerRef = useRef(null); //
     const timeoutRef = useRef(null);
     const indexRef = useRef(0);
 
