@@ -10,7 +10,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Endpoint glówny
+// Endpoint glowny
 app.get('/', (req, res) => {
   res.send('Railway backend dziala');
 });
@@ -71,7 +71,7 @@ app.post('/login', async (req, res) => {
 
 // Zapis trasy
 app.post("/routes", async (req, res) => {
-  const { name, route, stops } = req.body;
+  const { name, route, stops, max_wagons, slope } = req.body;
 
   try {
     const geojson = JSON.stringify({
@@ -82,9 +82,9 @@ app.post("/routes", async (req, res) => {
     const stopsJson = JSON.stringify(stops);
 
     await db.none(
-      `INSERT INTO routes (name, geojson, stops)
-       VALUES ($1, $2::jsonb, $3::jsonb)`,
-      [name, geojson, stopsJson]
+      `INSERT INTO routes (name, geojson, stops, max_wagons, slope)
+       VALUES ($1, $2::jsonb, $3::jsonb, $4, $5)`,
+      [name, geojson, stopsJson, max_wagons, slope]
     );
 
     res.status(201).send("Zapisano trase");
