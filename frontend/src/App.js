@@ -164,8 +164,8 @@ const MapWithDrawing = ({ onSimulate, onAddStops, setRouteParams }) => {
                 setRouteParams({ maxWagons, slope });
 
                 layer.bindTooltip(
-                    `Maks. wagony: ${isNaN(maxWagons) ? "brak" : maxWagons}\n, Nachylenie: ${isNaN(slope) ? "brak" : slope}%\n, 
-                    Długość: ${distanceKm.toFixed(2)} km\n, Czas przejazdu: ${timeResult.formatted}`,
+                    `Maks. wagony: ${isNaN(maxWagons) ? "brak" : maxWagons}, Nachylenie: ${isNaN(slope) ? "brak" : slope}%<br>
+                    Długość: ${distanceKm.toFixed(2)} km<br>Czas przejazdu: ${timeResult.formatted}`,
                     { sticky: true }
                 );
             }
