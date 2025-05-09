@@ -1,0 +1,67 @@
+﻿html, body, #root, .app-container {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.app-container {
+    position: relative;
+    z-index: 1;
+}
+
+.sidebar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 100%;
+    width: 300px;
+    padding: 1rem;
+    z-index: 999;
+    box-shadow: -2px 0 6px rgba(0, 0, 0, 0.1);
+    overflow-y: auto;
+}
+
+.mapmenu {
+    position: absolute;
+    top: 70px;
+    right: 0;
+    height: calc(100% - 70px);
+    width: 250px;
+    padding: 1rem;
+    z-index: 999;
+    box-shadow: -2px 0 6px rgba(0, 0, 0, 0.1);
+    overflow-y: auto;
+}
+
+.top-buttons {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1100;
+}
+
+.sidebar.light-theme,
+.mapmenu.light-theme {
+    background-color: #ffffffdd;
+    color: #000;
+}
+
+.sidebar.dark-theme,
+.mapmenu.dark-theme {
+    background-color: #1e1e1edd;
+    color: #ffffff;
+}
+
+.sidebar.gray-theme,
+.mapmenu.gray-theme {
+    background-color: #ccccccdd;
+    color: #111111;
+}
+
+button,
+select,
+input {
+    background-color: inherit;
+    color: inherit;
+    border: 1px solid currentColor;
+}
