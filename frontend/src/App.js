@@ -1,10 +1,13 @@
-﻿import React, { useEffect, useState, useRef } from "react";
+﻿// App.js
+import React, { useState, useEffect, useRef } from "react";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import * as L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import "@geoman-io/leaflet-geoman-free";
 import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
-import "leaflet/dist/leaflet.css";
+import "./theme.css";
 import AuthForm from "./AuthForm";
+
 
 const calculateDistanceKm = (latlngs) => {
     let dist = 0;
@@ -38,45 +41,82 @@ const formatTime = (seconds) => {
 };
 
 const Simulation = ({ polylineCoords, stops, run, paused, trainType, routeParams }) => {
+
     const map = useMap();
-    const markerRef = useRef(null);
-    const timeoutRef = useRef(null);
-    const indexRef = useRef(0);
+    const trainMarkerRef = useRef(null);
 
     useEffect(() => {
-        if (!polylineCoords.length || !run) return;
+        if (!map || !route) return;
 
-        const polyline = L.polyline(polylineCoords, { color: "blue" }).addTo(map);
-        const marker = L.circleMarker(polylineCoords[0], {
-            radius: 6,
-            color: "red",
-        }).addTo(map);
+        map.eachLayer((layer) => {
+            if (layer instanceof L.Polyline || layer instanceof L.Marker || layer instanceof L.CircleMarker) {
+                map.removeLayer(layer);
+            }
+        });
 
-        markerRef.current = marker;
-        indexRef.current = 0;
+        if (route.geojson?.coordinates) {
+            const coords = route.geojson.coordinates.map(([lng, lat]) => [lat, lng]);
+            const polyline = L.polyline(coords, { color: "blue" }).addTo(map);
+            map.fitBounds(polyline.getBounds());
 
-        return () => {
-            map.removeLayer(marker);
-            map.removeLayer(polyline);
-            clearTimeout(timeoutRef.current);
-        };
-    }, [polylineCoords, run, map]);
+            if (showTrain && coords.length > 0) {
+                const trainIcon = new L.Icon({
+                    iconUrl: "/train.png",
+                    iconSize: [32, 32],
+                    iconAnchor: [16, 16],
+                });
+                const marker = L.marker(coords[0], { icon: trainIcon }).addTo(map);
+                trainMarkerRef.current = marker;
+                onTrainReady({ marker, coords });
+            }
+        }
 
-    useEffect(() => {
-        if (!run || paused || !markerRef.current) return;
-
-        const coords = polylineCoords;
-
-        const move = () => {
-            if (indexRef.current >= coords.length) return;
-
-            const currentPoint = coords[indexRef.current];
-            markerRef.current.setLatLng(currentPoint);
-
-            const foundStop = stops.find((stop) => {
+        if (Array.isArray(route.stops)) {
+            route.stops.forEach((stop, index) => {
                 const [lng, lat] = stop.geometry.coordinates;
-                return L.latLng(lat, lng).distanceTo(currentPoint) < 10;
+                let name = stop.properties?.name || "Przystanek";
+                let stopTime = stop.properties?.stopTime || 0;
+
+                const icon = L.divIcon({
+                    className: 'custom-stop-icon',
+                    html: '<div style="width:14px;height:14px;background:red;border-radius:50%;border:2px solid white;"></div>',
+                    iconSize: [14, 14],
+                    iconAnchor: [7, 7]
+                });
+
+                const marker = L.marker([lat, lng], { icon }).addTo(map);
+                const popupContent = `<b>${name}</b><br/>Czas postoju: ${stopTime}s<br/><button id="edit-${index}">Edytuj</button>`;
+                marker.bindPopup(popupContent);
+
+                marker.on("click", (e) => {
+                    L.DomEvent.stopPropagation(e.originalEvent);
+                    marker.openPopup();
+                });
+
+                marker.on("popupopen", () => {
+                    setTimeout(() => {
+                        const btn = document.getElementById(`edit-${index}`);
+                        if (btn) {
+                            btn.onclick = (ev) => {
+                                ev.stopPropagation();
+                                const newName = prompt("Nowa nazwa przystanku:", name);
+                                const newTime = prompt("Nowy czas postoju (w sekundach):", stopTime);
+                                if (newName !== null && newTime !== null) {
+                                    stop.properties.name = newName;
+                                    stop.properties.stopTime = parseInt(newTime);
+                                    name = newName;
+                                    stopTime = parseInt(newTime);
+                                    marker.setPopupContent(
+                                        `<b>${newName}</b><br/>Czas postoju: ${newTime}s<br/><button id="edit-${index}">Edytuj</button>`
+                                    );
+                                    marker.openPopup();
+                                }
+                            };
+                        }
+                    }, 100);
+                });
             });
+
 
             /*const delay = foundStop
                 ? trainType === "freight"
@@ -120,9 +160,12 @@ const Simulation = ({ polylineCoords, stops, run, paused, trainType, routeParams
     }, [run, paused, polylineCoords, stops, trainType]);
 
     return null;
-};
+}
 
-const MapWithDrawing = ({ onSimulate, onAddStops, setRouteParams }) => {
+
+const MapWithDrawing = ( onDraw ,onSimulate, onAddStops, setRouteParams }) => {
+
+
     const map = useMap();
     const stopsRef = [];
 
@@ -130,18 +173,20 @@ const MapWithDrawing = ({ onSimulate, onAddStops, setRouteParams }) => {
         if (!map) return;
 
         map.pm.addControls({
-            position: "topright",
+            position: "topleft",
             drawCircle: false,
-            drawCircleMarker: true,
             drawMarker: false,
-            drawRectangle: false,
             drawPolygon: false,
+            drawRectangle: false,
             drawText: false,
+            drawPolyline: true,
+            drawCircleMarker: true,
         });
 
         map.off("pm:create");
 
         map.on("pm:create", (e) => {
+
             const layer = e.layer;
 
             if (layer instanceof L.Polyline) {
@@ -206,30 +251,124 @@ const MapWithDrawing = ({ onSimulate, onAddStops, setRouteParams }) => {
         });
     }, [map, onSimulate, onAddStops, setRouteParams]);
 
+
     return null;
-};
+}
 
 function App() {
-    const [coords, setCoords] = useState([]);
-    const [stops, setStops] = useState([]);
-    const [startSignal, setStartSignal] = useState(false);
-    const [isRunning, setIsRunning] = useState(false);
-    const [isPaused, setIsPaused] = useState(false);
+    const [showMainMenu, setShowMainMenu] = useState(false);
+    const [showMapMenu, setShowMapMenu] = useState(false);
+    const [activeTab, setActiveTab] = useState("konto");
     const [routeName, setRouteName] = useState("");
+
+    const [allRoutes, setAllRoutes] = useState([]);
+    const [selectedRoute, setSelectedRoute] = useState(null);
+    const [train, setTrain] = useState(null);
+    const [isRunning, setIsRunning] = useState(false);
+    const [info, setInfo] = useState("");
+    const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
+    const intervalRef = useRef(null);
+    const [drawnCoords, setDrawnCoords] = useState([]);
+    const [drawnStops, setDrawnStops] = useState([]);
     const [savedRoutes, setSavedRoutes] = useState([]);
     const [trainType, setTrainType] = useState("passenger");
     const [routeParams, setRouteParams] = useState({ maxWagons: null, slope: null });
 
-    // ... funkcje handleStart, Pause, SaveRoute, LoadRoutes itd.
+
+    useEffect(() => {
+        document.body.className = "";
+        document.body.classList.add(`${theme}-theme`);
+        localStorage.setItem("theme", theme);
+    }, [theme]);
+
+    const handleSaveRoute = async () => {
+        if (!routeName || drawnCoords.length === 0) return alert("Podaj nazwę i narysuj trasę.");
+        try {
+            await fetch("http://localhost:5000/routes", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: routeName, route: drawnCoords, stops: drawnStops }),
+            });
+            alert("Zapisano trasę");
+            setRouteName("");
+            setDrawnCoords([]);
+            setDrawnStops([]);
+            handleLoadRoutes();
+        } catch (err) {
+            alert("Błąd zapisu trasy");
+        }
+    };
+
+    const handleLoadRoutes = async () => {
+        try {
+            const response = await fetch("http://localhost:5000/routes");
+            const data = await response.json();
+            setAllRoutes(data);
+        } catch (err) {
+            alert("Nie udało się pobrać tras");
+        }
+    };
+
+    const handleDeleteRoute = async () => {
+        if (!selectedRoute) return alert("Wybierz trasę do usunięcia");
+        try {
+            await fetch(`http://localhost:5000/routes/${selectedRoute.id}`, { method: "DELETE" });
+            alert("Usunięto trasę");
+            setSelectedRoute(null);
+            handleLoadRoutes();
+        } catch (err) {
+            alert("Błąd usuwania");
+        }
+    };
+
+    const handleStartTrain = () => {
+        if (!train) return;
+        let i = 0;
+        setIsRunning(true);
+        intervalRef.current = setInterval(() => {
+            if (!train.marker || i >= train.coords.length) {
+                clearInterval(intervalRef.current);
+                setIsRunning(false);
+                return;
+            }
+            train.marker.setLatLng(train.coords[i]);
+            i++;
+        }, 500);
+    };
+
+    const handlePauseTrain = () => {
+        clearInterval(intervalRef.current);
+        setIsRunning(false);
+    };
+
+    const handleResetTrain = () => {
+        if (train && train.coords.length > 0 && train.marker) {
+            train.marker.setLatLng(train.coords[0]);
+        }
+        handlePauseTrain();
+    };
+
+    useEffect(() => {
+        if (!selectedRoute || !selectedRoute.geojson?.coordinates) return;
+        const coords = selectedRoute.geojson.coordinates;
+        let distance = 0;
+        for (let i = 1; i < coords.length; i++) {
+            const [lng1, lat1] = coords[i - 1];
+            const [lng2, lat2] = coords[i];
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            distance += 6371 * c;
+        }
+        setInfo(`Długość trasy: ${distance.toFixed(2)} km`);
+    }, [selectedRoute]);
 
     return (
-        <div className="App" style={{ height: "100vh", width: "100vw", position: "relative" }}>
-            <MapContainer
-                center={[49.6218, 20.6972]}
-                zoom={13}
-                style={{ height: "100%", width: "100%" }}
-            >
+        <div className="app-container">
+            <MapContainer center={[49.62, 20.7]} zoom={13} style={{ height: "100%", width: "100%" }}>
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+
                 <MapWithDrawing onSimulate={setCoords} onAddStops={setStops} setRouteParams={setRouteParams} />
                 <Simulation
                     polylineCoords={coords}
@@ -239,22 +378,63 @@ function App() {
                     trainType={trainType}
                     routeParams={routeParams}
                 />
+
             </MapContainer>
 
-            <div style={{ position: "absolute", top: "80px", right: "10px", backgroundColor: "#fff", padding: "6px", borderRadius: "6px", width: "160px", boxShadow: "0 1px 6px rgba(0,0,0,0.2)", fontSize: "12px", zIndex: 1000 }}>
-                {/* Kontrolki symulacji + zapis trasy */}
-
-                <select
-                    value={trainType}
-                    onChange={(e) => setTrainType(e.target.value)}
-                    style={{ width: "100%", marginTop: "6px", fontSize: "12px" }}
-                >
-                    <option value="passenger">Pociąg pasażerski</option>
-                    <option value="freight">Pociąg towarowy</option>
-                </select>
+            <div className="top-buttons">
+                <button onClick={() => { setShowMainMenu(!showMainMenu); setShowMapMenu(false); }} style={{ width: 40, height: 40, marginBottom: 8 }}>Menu</button>
+                <button onClick={() => { setShowMapMenu(!showMapMenu); setShowMainMenu(false); }} style={{ width: 40, height: 40 }}>Mapa</button>
             </div>
+
+            {showMainMenu && (
+                <div className={`sidebar ${theme}-theme`}>
+                    <div style={{ marginBottom: "1rem" }}>
+                        <button onClick={() => setActiveTab("konto")}>Konto</button>
+                        <button onClick={() => setActiveTab("mapy")}>Mapy</button>
+                        <button onClick={() => setActiveTab("wyglad")}>Wyglad</button>
+                    </div>
+                    {activeTab === "konto" && <AuthForm />}
+                    {activeTab === "mapy" && <p>Import map z internetu - wkrótce</p>}
+                    {activeTab === "wyglad" && (
+                        <div>
+                            <label htmlFor="theme-select">Wybierz motyw:</label>
+                            <select id="theme-select" value={theme} onChange={(e) => setTheme(e.target.value)} style={{ width: "100%", marginTop: "0.5rem" }}>
+                                <option value="light">Jasny</option>
+                                <option value="dark">Ciemny</option>
+                                <option value="gray">Szary</option>
+                            </select>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {showMapMenu && (
+                <div className={`mapmenu ${theme}-theme`}>
+                    <h3>Opcje mapy</h3>
+                    <input value={routeName} onChange={(e) => setRouteName(e.target.value)} placeholder="Nazwa nowej trasy" style={{ width: "100%", marginBottom: "0.5rem" }} />
+                    <button onClick={handleSaveRoute} style={{ width: "100%", marginBottom: "0.5rem" }}>Zapisz trasę</button>
+                    <button onClick={handleLoadRoutes} style={{ width: "100%", marginBottom: "0.5rem" }}>Odśwież trasy</button>
+                    {allRoutes.length > 0 && (
+                        <select onChange={(e) => {
+                            const selected = allRoutes.find((r) => r.id.toString() === e.target.value);
+                            setSelectedRoute(selected);
+                        }} style={{ width: "100%", marginBottom: "0.5rem" }}>
+                            <option value="">Wybierz trasę</option>
+                            {allRoutes.map((r) => (
+                                <option key={r.id} value={r.id}>{r.name}</option>
+                            ))}
+                        </select>
+                    )}
+                    <button onClick={handleDeleteRoute} style={{ width: "100%", marginBottom: "0.5rem" }}>Usuń trasę</button>
+                    <button onClick={handleStartTrain} style={{ width: "100%", marginBottom: "0.25rem" }} disabled={!train || isRunning}>Start</button>
+                    <button onClick={handlePauseTrain} style={{ width: "100%", marginBottom: "0.25rem" }} disabled={!isRunning}>Pauza</button>
+                    <button onClick={handleResetTrain} style={{ width: "100%", marginBottom: "0.5rem" }}>Reset</button>
+                    <div>{info}</div>
+                </div>
+            )}
         </div>
     );
 }
 
 export default App;
+
