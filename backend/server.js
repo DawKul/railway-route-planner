@@ -10,7 +10,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Główna strona
+// Endpoint glowny
+
 app.get('/', (req, res) => {
     res.send('Railway backend działa');
 });
@@ -68,7 +69,9 @@ app.post('/login', async (req, res) => {
 
 // Zapis trasy
 app.post("/routes", async (req, res) => {
-    const { name, route, stops } = req.body;
+
+  const { name, route, stops, max_wagons, slope } = req.body;
+
 
     console.log("🛠️ Otrzymano do zapisu:", { name, route, stops });
 
@@ -85,17 +88,18 @@ app.post("/routes", async (req, res) => {
         const geojsonString = JSON.stringify(geojson);
         const stopsString = JSON.stringify(stops || []);
 
-        await db.none(
-            `INSERT INTO routes (name, geojson, stops)
-       VALUES ($1, $2::jsonb, $3::jsonb)`,
-            [name, geojsonString, stopsString]
-        );
+    await db.none(
+      `INSERT INTO routes (name, geojson, stops, max_wagons, slope)
+       VALUES ($1, $2::jsonb, $3::jsonb, $4, $5)`,
+      [name, geojson, stopsJson, max_wagons, slope]
+    );
 
-        res.status(201).send("✅ Zapisano trasę");
-    } catch (err) {
-        console.error("❌ Błąd zapisu trasy:", err.message);
-        res.status(500).send("Błąd zapisu trasy: " + err.message);
-    }
+    res.status(201).send("Zapisano trase");
+  } catch (err) {
+    console.error("? Blad zapisu trasy:", err.message);
+    res.status(500).send("Blad zapisu trasy: " + err.message);
+  }
+
 });
 
 // Pobieranie tras

@@ -8,7 +8,40 @@ import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
 import "./theme.css";
 import AuthForm from "./AuthForm";
 
-function MapLoader({ route, onTrainReady, showTrain }) {
+
+const calculateDistanceKm = (latlngs) => {
+    let dist = 0;
+    for (let i = 1; i < latlngs.length; i++) {
+        dist += latlngs[i - 1].distanceTo(latlngs[i]);
+    }
+    return dist / 1000; // metry -> km
+};
+
+const calculateTravelTime = ({ distanceKm, avgSpeed = 60, slopePercent = 0, maxWagons = 5, actualWagons = 5, stops = [] }) => {
+    const slopeModifier = 1 - Math.abs(slopePercent) * 0.02;
+    const overloadModifier = actualWagons > maxWagons ? 1 - 0.05 * (actualWagons - maxWagons) : 1;
+
+    const effectiveSpeed = avgSpeed * slopeModifier * overloadModifier;
+    const drivingTimeSec = (distanceKm / effectiveSpeed) * 3600;
+
+    const stopTimeSec = stops.reduce((sum, stop) => sum + (stop.properties?.stopTime || 0), 0);
+
+    return {
+        drivingTime: drivingTimeSec,
+        stopTime: stopTimeSec,
+        totalTime: drivingTimeSec + stopTimeSec,
+        formatted: formatTime(drivingTimeSec + stopTimeSec),
+    };
+};
+
+const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return `${mins} min ${secs} s`;
+};
+
+const Simulation = ({ polylineCoords, stops, run, paused, trainType, routeParams }) => {
+
     const map = useMap();
     const trainMarkerRef = useRef(null);
 
@@ -83,14 +116,58 @@ function MapLoader({ route, onTrainReady, showTrain }) {
                     }, 100);
                 });
             });
-        }
-    }, [map, route, onTrainReady, showTrain]);
+
+
+            /*const delay = foundStop
+                ? trainType === "freight"
+                    ? 100
+                    : foundStop.properties.stopTime * 1000
+                : 100;*/
+            
+            const delay = (() => {
+                let baseDelay = 100; // domyslnie
+            
+                if (foundStop && trainType === "passenger") {
+                    baseDelay = foundStop.properties.stopTime * 1000;
+                }
+            
+                if (routeParams.slope) {
+                    baseDelay *= (1 + routeParams.slope / 100); // wieksze nachylenie = wolniej
+                }
+            
+                if (routeParams.maxWagons && trainType === "freight") {
+                    baseDelay *= (1 + routeParams.maxWagons / 50); // uproszczony model
+                }
+            
+                return baseDelay;
+            })();                
+            
+            if (foundStop && trainType === "passenger") {
+                markerRef.current
+                    .bindPopup(
+                        `Postój: ${foundStop.properties.name} (${foundStop.properties.stopTime}s)`
+                    )
+                    .openPopup();
+            }
+
+            indexRef.current++;
+            timeoutRef.current = setTimeout(move, delay);
+        };
+
+        move();
+
+        return () => clearTimeout(timeoutRef.current);
+    }, [run, paused, polylineCoords, stops, trainType]);
 
     return null;
 }
 
-function MapDrawingTools({ onDraw }) {
+
+const MapWithDrawing = ( onDraw ,onSimulate, onAddStops, setRouteParams }) => {
+
+
     const map = useMap();
+    const stopsRef = [];
 
     useEffect(() => {
         if (!map) return;
@@ -106,11 +183,74 @@ function MapDrawingTools({ onDraw }) {
             drawCircleMarker: true,
         });
 
+        map.off("pm:create");
+
         map.on("pm:create", (e) => {
-            if (onDraw) onDraw(e);
-            map.pm.disableDraw();
+
+            const layer = e.layer;
+
+            if (layer instanceof L.Polyline) {
+                const coords = layer.getLatLngs();
+                const maxWagons = parseInt(prompt("Maksymalna liczba wagonów:"), 10);
+                const slope = parseFloat(prompt("Nachylenie trasy (%):"));
+                const actualWagons = parseInt(prompt("Aktualna liczba wagonów:"), 10);
+
+                const distanceKm = calculateDistanceKm(coords);
+
+                const timeResult = calculateTravelTime({
+                    distanceKm,
+                    slopePercent: slope,
+                    maxWagons,
+                    actualWagons,
+                    stops: stopsRef,
+                });
+
+                onSimulate(coords);
+                setRouteParams({ maxWagons, slope });
+
+                layer.bindTooltip(
+                    `Maks. wagony: ${isNaN(maxWagons) ? "brak" : maxWagons}, Nachylenie: ${isNaN(slope) ? "brak" : slope}%<br>
+                    Długość: ${distanceKm.toFixed(2)} km<br>Czas przejazdu: ${timeResult.formatted}`,
+                    { sticky: true }
+                );
+            }
+
+            if (layer instanceof L.CircleMarker) {
+                if (layer._isProcessed) return;
+                layer._isProcessed = true;
+
+                const latlng = layer.getLatLng();
+                const stopName = prompt("Nazwa przystanku:");
+                const passengersIn = parseInt(prompt("Średnia liczba wsiadających:"), 10);
+                const passengersOut = parseInt(prompt("Średnia liczba wysiadających:"), 10);
+                const stopTime = (passengersIn + passengersOut) * 1; // lub inny mnożnik
+
+                if (stopName) {
+                    const stop = {
+                        type: "Feature",
+                        geometry: {
+                            type: "Point",
+                            coordinates: [latlng.lng, latlng.lat],
+                        },
+                        properties: {
+                            name: stopName,
+                            stopTime,
+                            passengersIn,
+                            passengersOut,
+                        },
+                    };
+
+                    stopsRef.push(stop); // zapamiętaj przystanek
+
+                    onAddStops((prev) => [...prev, stop]);
+                    layer.bindPopup(`${stopName} (${stopTime}s)`).openPopup();
+                } else {
+                    map.removeLayer(layer);
+                }
+            }
         });
-    }, [map, onDraw]);
+    }, [map, onSimulate, onAddStops, setRouteParams]);
+
 
     return null;
 }
@@ -120,6 +260,7 @@ function App() {
     const [showMapMenu, setShowMapMenu] = useState(false);
     const [activeTab, setActiveTab] = useState("konto");
     const [routeName, setRouteName] = useState("");
+
     const [allRoutes, setAllRoutes] = useState([]);
     const [selectedRoute, setSelectedRoute] = useState(null);
     const [train, setTrain] = useState(null);
@@ -129,6 +270,10 @@ function App() {
     const intervalRef = useRef(null);
     const [drawnCoords, setDrawnCoords] = useState([]);
     const [drawnStops, setDrawnStops] = useState([]);
+    const [savedRoutes, setSavedRoutes] = useState([]);
+    const [trainType, setTrainType] = useState("passenger");
+    const [routeParams, setRouteParams] = useState({ maxWagons: null, slope: null });
+
 
     useEffect(() => {
         document.body.className = "";
@@ -223,19 +368,17 @@ function App() {
         <div className="app-container">
             <MapContainer center={[49.62, 20.7]} zoom={13} style={{ height: "100%", width: "100%" }}>
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                <MapLoader route={selectedRoute} onTrainReady={setTrain} showTrain={true} />
-                <MapDrawingTools onDraw={(e) => {
-                    const geo = e.layer.toGeoJSON();
-                    if (geo.geometry.type === "LineString") setDrawnCoords(geo.geometry.coordinates);
-                    if (geo.geometry.type === "Point") {
-                        const stop = {
-                            type: "Feature",
-                            geometry: geo.geometry,
-                            properties: { name: "Nowy przystanek", stopTime: 0 },
-                        };
-                        setDrawnStops((prev) => [...prev, stop]);
-                    }
-                }} />
+
+                <MapWithDrawing onSimulate={setCoords} onAddStops={setStops} setRouteParams={setRouteParams} />
+                <Simulation
+                    polylineCoords={coords}
+                    stops={stops}
+                    run={startSignal}
+                    paused={isPaused}
+                    trainType={trainType}
+                    routeParams={routeParams}
+                />
+
             </MapContainer>
 
             <div className="top-buttons">
