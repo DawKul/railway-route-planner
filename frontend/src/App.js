@@ -86,7 +86,20 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
 
     useEffect(() => {
         if (!map) return;
-        map.pm.addControls({ position: "topleft", drawCircle: false, drawMarker: false, drawPolygon: false, drawRectangle: false, drawText: false, drawPolyline: true, drawCircleMarker: true });
+        map.off("pm:create");
+        map.pm.addControls({ 
+            position: "topleft", 
+            drawCircle: false, 
+            drawMarker: false, 
+            drawPolygon: false, 
+            drawRectangle: false, 
+            drawText: false, 
+            drawPolyline: true, 
+            drawCircleMarker: true,
+            editMode: true,
+            dragMode: true,
+            removalMode: true,
+        });
         map.on("pm:create", e => {
             const layer = e.layer;
             if (layer instanceof L.Polyline) {
@@ -107,10 +120,43 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
                 const outP = parseInt(prompt("Liczba wysiadających:"), 10);
                 const sTime = (inP + outP) * 1;
                 if (!name) { map.removeLayer(layer); return; }
-                const stop = { type: "Feature", geometry: { type: "Point", coordinates: [pt.lng, pt.lat] }, properties: { name, stopTime: sTime, passengersIn: inP, passengersOut: outP } };
+                const stop = { 
+                    type: "Feature", 
+                    geometry: { type: "Point", coordinates: [pt.lng, pt.lat] }, 
+                    properties: { name, stopTime: sTime, passengersIn: inP, passengersOut: outP } };
                 stopsRef.push(stop);
                 onStops(prev => [...prev, stop]);
-                layer.bindPopup(`${name} (${sTime}s)`).openPopup();
+                layer.bindPopup(
+                    `<b>${name}</b><br/>Czas postoju: ${sTime}s<br/><button id="edit-stop">Edytuj</button>`
+                );
+                layer.on("popupopen", () => {
+                    setTimeout(() => {
+                        const btn = document.getElementById("edit-stop");
+                        if (!btn) return;
+
+                        btn.onclick = (ev) => {
+                            ev.stopPropagation();
+                            const newName = prompt("Nowa nazwa:", stop.properties.name);
+                            const newIn   = parseInt(prompt("Nowa liczba wsiadających:",  stop.properties.passengersIn), 10);
+                            const newOut  = parseInt(prompt("Nowa liczba wysiadających:", stop.properties.passengersOut), 10);
+                            const newTime = (newIn + newOut) * 1;
+                            if (newName && !isNaN(newIn) && !isNaN(newOut)) {
+                                // zaktualizuj właściwości
+                                stop.properties = {
+                                    name: newName,
+                                    passengersIn: newIn,
+                                    passengersOut: newOut,
+                                    stopTime: newTime,
+                                };
+                                // zaktualizuj treść tooltipa
+                                layer.setPopupContent(
+                                    `<b>${newName}</b><br/>Czas postoju: ${newTime}s<br/><button id="edit-stop">Edytuj</button>`
+                                );
+                                layer.openPopup();
+                            }
+                        };
+                    }, 50);
+                });
             }
             map.pm.disableDraw();
         });
@@ -133,6 +179,27 @@ function MapLoader({ route, onTrainReady, showTrain }) {
         if (route.geojson?.coordinates) {
             const coords = route.geojson.coordinates.map(([lng, lat]) => [lat, lng]);
             const polyline = L.polyline(coords, { color: "blue" }).addTo(map);
+            // Włącz edycję
+            polyline.pm.enable({ allowSelfIntersection: false });
+
+            // Obsłuż zakończenie edycji trasy
+            polyline.on("pm:update", () => {
+                const updatedCoords = polyline.getLatLngs();
+                const distKm = calculateDistanceKm(updatedCoords);
+
+                const timeRes = calculateTravelTime({
+                    distanceKm: distKm,
+                    slopePercent: route?.slope || 0,
+                    maxWagons: route?.maxWagons || 5,
+                    actualWagons: route?.maxWagons || 5,
+                    stops: route?.stops || [],
+            });
+
+            polyline.bindTooltip(
+                `Długość: ${distKm.toFixed(2)} km<br>Czas: ${timeRes.formatted}`
+            ).openTooltip();
+            });
+
             map.fitBounds(polyline.getBounds());
             if (showTrain && coords.length > 0) {
                 const trainIcon = new L.Icon({ iconUrl: "/train.png", iconSize: [32, 32], iconAnchor: [16, 16] });
@@ -149,9 +216,43 @@ function MapLoader({ route, onTrainReady, showTrain }) {
                 let stopTime = stop.properties?.stopTime || 0;
                 const icon = L.divIcon({ className: 'custom-stop-icon', html: '<div style="width:14px;height:14px;background:red;border-radius:50%;border:2px solid white;"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
                 const marker = L.marker([lat, lng], { icon }).addTo(map);
-                marker.bindPopup(`<b>${name}</b><br/>Czas postoju: ${stopTime}s<br/><button id=\`edit-${idx}\`>Edytuj</button>`);
-                marker.on("click", e => { L.DomEvent.stopPropagation(e.originalEvent); marker.openPopup(); });
-                marker.on("popupopen", () => { setTimeout(() => { const btn = document.getElementById(`edit-${idx}`); if (btn) btn.onclick = ev => { ev.stopPropagation(); const nName = prompt("Nowa nazwa przystanku:", name); const nTime = prompt("Nowy czas postoju (s):", stopTime); if (nName !== null && nTime !== null) { stop.properties.name = nName; stop.properties.stopTime = parseInt(nTime); name = nName; stopTime = parseInt(nTime); marker.setPopupContent(`<b>${nName}</b><br/>Czas postoju: ${nTime}s<br/><button id=\`edit-${idx}\`>Edytuj</button>`); marker.openPopup(); } }; }, 100); });
+
+                marker.pm.enable({ draggable: true });
+                marker.on("pm:dragend", () => {
+                    const newLatLng = marker.getLatLng();
+                    stop.geometry.coordinates = [newLatLng.lng, newLatLng.lat];
+                });
+
+                marker.bindPopup(
+                    `<b>${name}</b><br/>Czas postoju: ${stopTime}s<br/><button id="edit-${idx}">Edytuj</button>`
+                );
+                marker.on("click", e => { marker.openPopup(); });
+                marker.on("popupopen", () => {
+                    setTimeout(() => {
+                        const btn = document.getElementById(`edit-${idx}`);
+                        if (btn) {
+                            btn.onclick = (ev) => {
+                                ev.stopPropagation();
+                                const newName = prompt("Nowa nazwa przystanku:", name);
+                                const newIn = parseInt(prompt("Nowa liczba wsiadających:", stop.properties.passengersIn || 0), 10);
+                                const newOut = parseInt(prompt("Nowa liczba wysiadających:", stop.properties.passengersOut || 0), 10);
+                                const newStopTime = (newIn + newOut) * 1;
+                                if (newName && !isNaN(newIn) && !isNaN(newOut)) {
+                                    stop.properties.name = newName;
+                                    stop.properties.passengersIn = newIn;
+                                    stop.properties.passengersOut = newOut;
+                                    stop.properties.stopTime = newStopTime;
+                                    name = newName;
+                                    stopTime = newStopTime;
+                                    marker.setPopupContent(
+                                        `<b>${newName}</b><br/>Czas postoju: ${newStopTime}s<br/><button id="edit-${idx}">Edytuj</button>`
+                                    );
+                                    marker.openPopup();
+                                }
+                            };
+                        }
+                    }, 100);
+                });
             });
         }
     }, [map, route, onTrainReady, showTrain]);
