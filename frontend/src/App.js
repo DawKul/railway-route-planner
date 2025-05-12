@@ -102,7 +102,7 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
         });
         map.on("pm:create", e => {
             const layer = e.layer;
-            if (layer instanceof L.Polyline) {
+            /*if (layer instanceof L.Polyline) {
                 const coords = layer.getLatLngs().map(p => [p.lat, p.lng]);
                 const maxW = parseInt(prompt("Maksymalna liczba wagonów:"), 10);
                 const slope = parseFloat(prompt("Nachylenie trasy (%):"));
@@ -154,7 +154,60 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
                         };
                     }, 50);
                 });
+            }*/
+            if (layer instanceof L.Polyline) {
+                const coords = layer.getLatLngs().map(p => [p.lat, p.lng]);
+
+                // Formularz HTML w popupie
+                const formHTML = `
+                    <b>Właściwości trasy:</b><br/>
+                    Max wagony: <input type="number" id="form-max" value="10"><br/>
+                    Aktualne wagony: <input type="number" id="form-act" value="8"><br/>
+                    Nachylenie (%): <input type="number" step="0.1" id="form-slope" value="2"><br/>
+                    <button id="form-save">Zapisz</button>
+                `;
+
+                layer.bindPopup(formHTML).openPopup();
+
+                layer.on("popupopen", () => {
+                    setTimeout(() => {
+                        const btn = document.getElementById("form-save");
+                        if (!btn) return;
+
+                        btn.onclick = () => {
+                            const maxW = parseInt(document.getElementById("form-max").value, 10);
+                            const actualW = parseInt(document.getElementById("form-act").value, 10);
+                            const slope = parseFloat(document.getElementById("form-slope").value);
+
+                            if (isNaN(maxW) || isNaN(actualW) || isNaN(slope)) {
+                                alert("Nieprawidłowe dane.");
+                                return;
+                            }
+
+                            const distKm = calculateDistanceKm(layer.getLatLngs());
+                            const timeRes = calculateTravelTime({
+                                distanceKm: distKm,
+                                slopePercent: slope,
+                                maxWagons: maxW,
+                                actualWagons: actualW,
+                                stops: stopsRef,
+                            });
+
+                            // Ustaw dane + tooltip
+                            setRouteParams({ maxWagons: maxW, slope });
+                            onCoords(coords);
+
+                            layer.bindTooltip(
+                                `Długość: ${distKm.toFixed(2)} km<br/>Czas: ${timeRes.formatted}`,
+                                { sticky: true }
+                            ).openTooltip();
+
+                            layer.closePopup(); // zamknij formularz po zapisaniu
+                        };
+                    }, 50);
+                });
             }
+
             if (layer instanceof L.CircleMarker) {
                 const pt = layer.getLatLng();
                 const name = prompt("Nazwa przystanku:");
@@ -209,7 +262,7 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
 }
 
 // Komponent do wyświetlania zapisanej trasy i edycji przystanków
-function MapLoader({ route, onTrainReady, showTrain }) {
+function MapLoader({ route, onTrainReady, showTrain, setRouteParams, onCoords }) {
     const map = useMap();
     const trainMarkerRef = useRef(null);
 
@@ -226,23 +279,71 @@ function MapLoader({ route, onTrainReady, showTrain }) {
 
             const distKm = calculateDistanceKm(polyline.getLatLngs());
             const slope = route.slope || 0;
-            const maxWagons = route.maxWagons || 5;
+            const maxW = route.maxWagons || 5;
+            const actualW = route.actualWagons || 5;
             const timeRes = calculateTravelTime({
-                distanceKm: distKm,
-                slopePercent: slope,
-                maxWagons,
-                actualWagons: maxWagons,
-                stops: route.stops || []
+                distanceKm: distKm, 
+                slopePercent: slope, 
+                maxWagons: maxW, 
+                actualWagons: actualW, 
+                stops: route.stops || [], 
             });
 
-            layer.bindTooltip(
+            polyline.bindTooltip(
                 `Długość: ${distKm.toFixed(2)} km<br>
                 Czas: ${timeRes.formatted}`, 
                 { sticky: true }
             );
 
             //Przycisk edycji linii
-            polyline.bindPopup(
+            const formHTML = `
+                <b>Właściwości trasy:</b><br/>
+                Max wagony: <input type="number" id="form-max" value="10"><br/>
+                Aktualne wagony: <input type="number" id="form-act" value="8"><br/>
+                Nachylenie (%): <input type="number" step="0.1" id="form-slope" value="2"><br/>
+                <button id="form-save">Zapisz</button>
+                `;
+
+            polyline.bindPopup(formHTML).openPopup();
+            polyline.on("popupopen", () => {
+                setTimeout(() => {
+                    const btn = document.getElementById("form-save");
+                    if (!btn) return;
+
+                    btn.onclick = () => {
+                        const maxW = parseInt(document.getElementById("form-max").value, 10);
+                        const actualW = parseInt(document.getElementById("form-act").value, 10);
+                        const slope = parseFloat(document.getElementById("form-slope").value);
+
+                        if (isNaN(maxW) || isNaN(actualW) || isNaN(slope)) {
+                            alert("Nieprawidłowe dane.");
+                            return;
+                        }
+
+                        const distKm = calculateDistanceKm(polyline.getLatLngs());
+                        const timeRes = calculateTravelTime({
+                            distanceKm: distKm,
+                            slopePercent: slope,
+                            maxWagons: maxW,
+                            actualWagons: actualW,
+                            stops: route?.stops || [],
+                        });
+
+                        // Ustaw dane + tooltip
+                        setRouteParams({ maxWagons: maxW, slope });
+                        onCoords(coords);
+
+                        polyline.setTooltipContent(
+                            `Długość: ${distKm.toFixed(2)} km<br/>Czas: ${timeRes.formatted}`,
+                            { sticky: true }
+                        ).openTooltip();
+
+                        polyline.closePopup(); // zamknij formularz po zapisaniu
+                    };
+                }, 50);
+            });
+            
+            /*polyline.bindPopup(
                     `<button id="edit-route">Edytuj</button>`
             );
             polyline.on("popupopen", () => {
@@ -261,7 +362,7 @@ function MapLoader({ route, onTrainReady, showTrain }) {
                             slopePercent: newslope, 
                             maxWagons: newmaxW, 
                             actualWagons: newactualW, 
-                            stops: stopsRef 
+                            stops: route.stops || [], 
                         });
                         if ( !isNaN(newmaxW) && !isNaN(newslope) && !isNaN(newactualW)) {
                             // zaktualizuj właściwości
@@ -279,7 +380,7 @@ function MapLoader({ route, onTrainReady, showTrain }) {
                         }
                     };
                 }, 50);
-            });
+            });*/
 
             if (showTrain && coords.length > 0) {
                 const trainIcon = new L.Icon({ iconUrl: "/train.png", iconSize: [32, 32], iconAnchor: [16, 16] });
