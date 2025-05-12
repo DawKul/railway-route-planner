@@ -1,15 +1,13 @@
-﻿// server.js
+﻿// backend/server.js
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const dotenv = require('dotenv');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { expressjwt: jwtMiddleware } = require('express-jwt');
 const db = require('./db');
 
-dotenv.config();
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
@@ -17,22 +15,32 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1d';
 const jwtOpts = { secret: JWT_SECRET, algorithms: ['HS256'] };
 
-// Protect routes: POST, DELETE require auth; GET /routes open if desired
+// chronimy wszystko poza rejestracją, logowaniem i checkami
 app.use(
-    ['/routes', '/routes/:id'],
-    jwtMiddleware(jwtOpts).unless({ path: ['/routes'], method: ['GET'] })
+    jwtMiddleware(jwtOpts).unless({
+        path: [
+            { url: '/register', methods: ['POST'] },
+            { url: '/login', methods: ['POST'] },
+            { url: '/', methods: ['GET'] },
+            { url: '/test', methods: ['GET'] }
+        ]
+    })
 );
 
-// Registration endpoint
+// Rejestracja
 app.post('/register', async (req, res) => {
     const { username, password } = req.body;
     try {
         const hashed = await bcrypt.hash(password, 10);
         const user = await db.one(
-            'INSERT INTO users(username, password) VALUES($1, $2) RETURNING id, username',
+            'INSERT INTO users(username, password) VALUES($1,$2) RETURNING id, username, role',
             [username, hashed]
         );
-        const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+        const token = jwt.sign(
+            { id: user.id, username: user.username, role: user.role },
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRES_IN }
+        );
         res.status(201).json({ token });
     } catch (err) {
         console.error('Registration error:', err);
@@ -40,24 +48,32 @@ app.post('/register', async (req, res) => {
     }
 });
 
-// Login endpoint
+// Logowanie
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
     try {
-        const user = await db.oneOrNone('SELECT * FROM users WHERE username = $1', [username]);
-        if (!user) return res.status(401).send('Invalid username or password');
+        const user = await db.oneOrNone(
+            'SELECT id, username, role, password FROM users WHERE username=$1',
+            [username]
+        );
+        if (!user) return res.status(401).json({ message: 'Invalid username or password' });
         const valid = await bcrypt.compare(password, user.password);
-        if (!valid) return res.status(401).send('Invalid username or password');
-        const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+        if (!valid) return res.status(401).json({ message: 'Invalid username or password' });
+        const token = jwt.sign(
+            { id: user.id, username: user.username, role: user.role },
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRES_IN }
+        );
         res.json({ token });
     } catch (err) {
         console.error('Login error:', err);
-        res.status(500).send('Login failed');
+        res.status(500).json({ message: 'Login failed' });
     }
 });
 
-// Create route (protected)
+// Utworzenie trasy (wymaga JWT)
 app.post('/routes', async (req, res) => {
+    if (!req.auth) return res.status(401).send('Invalid or missing token');
     const { name, route, stops, max_wagons, slope } = req.body;
     const userId = req.auth.id;
     if (!name || !Array.isArray(route) || route.length === 0) {
@@ -67,8 +83,9 @@ app.post('/routes', async (req, res) => {
         const geojsonString = JSON.stringify({ type: 'LineString', coordinates: route });
         const stopsString = JSON.stringify(stops || []);
         await db.none(
-            `INSERT INTO routes (name, geojson, stops, max_wagons, slope, user_id)
-       VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, $6)`,
+            `INSERT INTO routes
+         (name, geojson, stops, max_wagons, slope, user_id)
+       VALUES ($1,$2::jsonb,$3::jsonb,$4,$5,$6)`,
             [name, geojsonString, stopsString, max_wagons, slope, userId]
         );
         res.status(201).send('Route saved');
@@ -78,12 +95,13 @@ app.post('/routes', async (req, res) => {
     }
 });
 
-// Get routes (protected)
+// Pobranie tras (wymaga JWT)
 app.get('/routes', async (req, res) => {
+    if (!req.auth) return res.status(401).send('Invalid or missing token');
     const userId = req.auth.id;
     try {
         const routes = await db.any(
-            'SELECT * FROM routes WHERE user_id = $1 ORDER BY id DESC',
+            'SELECT * FROM routes WHERE user_id=$1 ORDER BY id DESC',
             [userId]
         );
         res.json(routes);
@@ -93,13 +111,15 @@ app.get('/routes', async (req, res) => {
     }
 });
 
-// Delete route (protected)
+// Usuwanie trasy – tylko admin
 app.delete('/routes/:id', async (req, res) => {
+    if (!req.auth) return res.status(401).send('Invalid or missing token');
+    if (req.auth.role !== 'admin') return res.status(403).send('Only admin can delete routes');
     const userId = req.auth.id;
     const routeId = req.params.id;
     try {
         const result = await db.result(
-            'DELETE FROM routes WHERE id = $1 AND user_id = $2',
+            'DELETE FROM routes WHERE id=$1 AND user_id=$2',
             [routeId, userId]
         );
         if (result.rowCount === 0) {
@@ -112,9 +132,9 @@ app.delete('/routes/:id', async (req, res) => {
     }
 });
 
-// Health check and PostGIS test
-app.get('/', (req, res) => res.send('Railway backend is running'));
-app.get('/test', async (req, res) => {
+// Health check i test PostGIS
+app.get('/', (_, res) => res.send('Railway backend is running'));
+app.get('/test', async (_, res) => {
     try {
         const result = await db.any('SELECT PostGIS_Version();');
         res.json(result);
@@ -122,6 +142,14 @@ app.get('/test', async (req, res) => {
         console.error('Test error:', err);
         res.status(500).send('Database connection failed');
     }
+});
+
+// Obsługa błędów JWT
+app.use((err, _, res, next) => {
+    if (err.name === 'UnauthorizedError') {
+        return res.status(401).send('Invalid or missing token');
+    }
+    next(err);
 });
 
 const PORT = process.env.PORT || 5000;
