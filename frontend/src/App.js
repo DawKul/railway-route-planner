@@ -102,7 +102,7 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
         });
         map.on("pm:create", e => {
             const layer = e.layer;
-            /*if (layer instanceof L.Polyline) {
+            if (layer instanceof L.Polyline) {
                 const coords = layer.getLatLngs().map(p => [p.lat, p.lng]);
                 const maxW = parseInt(prompt("Maksymalna liczba wagonów:"), 10);
                 const slope = parseFloat(prompt("Nachylenie trasy (%):"));
@@ -154,16 +154,16 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
                         };
                     }, 50);
                 });
-            }*/
-            if (layer instanceof L.Polyline) {
+            }
+            /*if (layer instanceof L.Polyline) {
                 const coords = layer.getLatLngs().map(p => [p.lat, p.lng]);
 
                 // Formularz HTML w popupie
                 const formHTML = `
                     <b>Właściwości trasy:</b><br/>
-                    Max wagony: <input type="number" id="form-max" value="10"><br/>
-                    Aktualne wagony: <input type="number" id="form-act" value="8"><br/>
-                    Nachylenie (%): <input type="number" step="0.1" id="form-slope" value="2"><br/>
+                    Max wagony: <input type="number" id="form-max" min="0" placeholder="10"><br/>
+                    Aktualne wagony: <input type="number" id="form-act" min="0" placeholder="8"><br/>
+                    Nachylenie (%): <input type="number" step="0.1" id="form-slope" min="0" placeholder="2"><br/>
                     <button id="form-save">Zapisz</button>
                 `;
 
@@ -206,7 +206,7 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
                         };
                     }, 50);
                 });
-            }
+            }*/
 
             if (layer instanceof L.CircleMarker) {
                 const pt = layer.getLatLng();
@@ -254,6 +254,61 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
                     }, 50);
                 });
             }
+            /*if (layer instanceof L.CircleMarker) {
+                const pt = layer.getLatLng();
+
+                const formHTML = `
+                    <b>Właściwości przystanku:</b><br/>
+                    Nazwa przystanku: <input type="text" id="form-name" value="${name}"><br/>
+                    Liczba wsiadających: <input type="number" id="form-pass-in" value="${inP}"><br/>
+                    Liczba wysiadających: <input type="number" id="form-pass-out" value="${outP}"><br/>
+                    <button id="form-save-stop">Zapisz</button>
+                `;
+
+                const name = prompt("Nazwa przystanku:");
+                const inP = parseInt(prompt("Liczba wsiadających:"), 10);
+                const outP = parseInt(prompt("Liczba wysiadających:"), 10);
+                const sTime = (inP + outP) * 1;
+                if (!name) { map.removeLayer(layer); return; }
+                const stop = { 
+                    type: "Feature", 
+                    geometry: { type: "Point", coordinates: [pt.lng, pt.lat] }, 
+                    properties: { name, stopTime: sTime, passengersIn: inP, passengersOut: outP } };
+                stopsRef.push(stop);
+                onStops(prev => [...prev, stop]);
+                layer.bindPopup(
+                    `<b>${name}</b><br/>Czas postoju: ${sTime}s<br/><button id="edit-stop">Edytuj</button>`
+                );
+                //Przycisk edycji przystanku
+                layer.on("popupopen", () => {
+                    setTimeout(() => {
+                        const btn = document.getElementById("edit-stop");
+                        if (!btn) return;
+
+                        btn.onclick = (ev) => {
+                            ev.stopPropagation();
+                            const newName = prompt("Nowa nazwa:", stop.properties.name);
+                            const newIn   = parseInt(prompt("Nowa liczba wsiadających:",  stop.properties.passengersIn), 10);
+                            const newOut  = parseInt(prompt("Nowa liczba wysiadających:", stop.properties.passengersOut), 10);
+                            const newTime = (newIn + newOut) * 1;
+                            if (newName && !isNaN(newIn) && !isNaN(newOut)) {
+                                // zaktualizuj właściwości
+                                stop.properties = {
+                                    name: newName,
+                                    passengersIn: newIn,
+                                    passengersOut: newOut,
+                                    stopTime: newTime,
+                                };
+                                // zaktualizuj treść tooltipa
+                                layer.setPopupContent(
+                                    `<b>${newName}</b><br/>Czas postoju: ${newTime}s<br/><button id="edit-stop">Edytuj</button>`
+                                );
+                                layer.openPopup();
+                            }
+                        };
+                    }, 50);
+                });
+            }*/
             map.pm.disableDraw();
         });
     }, [map, onCoords, onStops, setRouteParams]);
@@ -304,7 +359,7 @@ function MapLoader({ route, onTrainReady, showTrain, setRouteParams, onCoords })
                 <button id="form-save">Zapisz</button>
                 `;
 
-            polyline.bindPopup(formHTML).openPopup();
+            /*polyline.bindPopup(formHTML).openPopup();
             polyline.on("popupopen", () => {
                 setTimeout(() => {
                     const btn = document.getElementById("form-save");
@@ -341,9 +396,9 @@ function MapLoader({ route, onTrainReady, showTrain, setRouteParams, onCoords })
                         polyline.closePopup(); // zamknij formularz po zapisaniu
                     };
                 }, 50);
-            });
+            });*/
             
-            /*polyline.bindPopup(
+            polyline.bindPopup(
                     `<button id="edit-route">Edytuj</button>`
             );
             polyline.on("popupopen", () => {
@@ -380,7 +435,7 @@ function MapLoader({ route, onTrainReady, showTrain, setRouteParams, onCoords })
                         }
                     };
                 }, 50);
-            });*/
+            });
 
             if (showTrain && coords.length > 0) {
                 const trainIcon = new L.Icon({ iconUrl: "/train.png", iconSize: [32, 32], iconAnchor: [16, 16] });
