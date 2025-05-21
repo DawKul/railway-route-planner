@@ -1,4 +1,4 @@
-﻿// frontend/src/App.js
+﻿// App.js — część 1/5 — Importy, funkcje pomocnicze, komponent Simulation
 import React, { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -7,8 +7,8 @@ import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import './theme.css';
 import AuthForm from './AuthForm';
+import AdminPanel from './AdminPanel';
 
-// --- Helper functions ---
 function calculateDistanceKm(latlngs) {
     let dist = 0;
     for (let i = 1; i < latlngs.length; i++) {
@@ -25,9 +25,7 @@ function formatTime(seconds) {
 
 function calculateTravelTime({ distanceKm, slopePercent = 0, maxWagons = 5, actualWagons = 5, stops = [] }) {
     const slopeMod = 1 - Math.abs(slopePercent) * 0.02;
-    const overloadMod = actualWagons > maxWagons
-        ? 1 - 0.05 * (actualWagons - maxWagons)
-        : 1;
+    const overloadMod = actualWagons > maxWagons ? 1 - 0.05 * (actualWagons - maxWagons) : 1;
     const effectiveSpeed = 60 * slopeMod * overloadMod;
     const drivingTimeSec = (distanceKm / effectiveSpeed) * 3600;
     const stopTimeSec = stops.reduce((sum, stop) => sum + (stop.properties?.stopTime || 0), 0);
@@ -35,7 +33,6 @@ function calculateTravelTime({ distanceKm, slopePercent = 0, maxWagons = 5, actu
     return { formatted: formatTime(totalSec) };
 }
 
-// --- Map Components ---
 function Simulation({ polylineCoords, stops, run, paused, trainType, routeParams }) {
     const map = useMap();
     const markerRef = useRef(null);
@@ -55,7 +52,6 @@ function Simulation({ polylineCoords, stops, run, paused, trainType, routeParams
             if (i >= polylineCoords.length) return;
             const pos = polylineCoords[i];
             markerRef.current.setLatLng(pos);
-
             let delay = 500;
             indexRef.current++;
             timeoutRef.current = setTimeout(move, delay);
@@ -67,13 +63,16 @@ function Simulation({ polylineCoords, stops, run, paused, trainType, routeParams
 
     return null;
 }
+// App.js — część 2/5 — MapWithDrawing i początek App()
 
-function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
+function MapWithDrawing({ onStops, onLineGenerated }) {
     const map = useMap();
-    const stopsRef = [];
+    const stopsRef = useRef([]);
+    const lineRef = useRef(null);
 
     useEffect(() => {
         if (!map) return;
+
         map.pm.addControls({
             position: 'topleft',
             drawCircle: false,
@@ -81,23 +80,12 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
             drawPolygon: false,
             drawRectangle: false,
             drawText: false,
-            drawPolyline: true,
+            drawPolyline: false,
             drawCircleMarker: true
         });
-        map.on('pm:create', e => {
+
+        map.on('pm:create', (e) => {
             const layer = e.layer;
-            if (layer instanceof L.Polyline) {
-                const latlngs = layer.getLatLngs();
-                const coords = latlngs.map(p => [p.lat, p.lng]);
-                const maxWagons = parseInt(prompt('Max wagons:'), 10);
-                const slope = parseFloat(prompt('Slope (%):'));
-                const actualWagons = parseInt(prompt('Actual wagons:'), 10);
-                const distKm = calculateDistanceKm(latlngs);
-                const tt = calculateTravelTime({ distanceKm: distKm, slopePercent: slope, maxWagons, actualWagons, stops: stopsRef });
-                layer.bindTooltip(`Length: ${distKm.toFixed(2)} km\nTime: ${tt.formatted}`, { sticky: true });
-                onCoords(coords);
-                setRouteParams({ maxWagons, slope });
-            }
             if (layer instanceof L.CircleMarker) {
                 const pt = layer.getLatLng();
                 const name = prompt('Stop name:');
@@ -111,19 +99,24 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
                 const stop = {
                     type: 'Feature',
                     geometry: { type: 'Point', coordinates: [pt.lng, pt.lat] },
-                    properties: { name, stopTime }
+                    properties: { name, stopTime, passengersIn: inP, passengersOut: outP }
                 };
-                stopsRef.push(stop);
-                onStops(prev => [...prev, stop]);
+                stopsRef.current.push(stop);
+                onStops([...stopsRef.current]);
+
                 layer.bindPopup(`${name} (${stopTime}s)`).openPopup();
+
+                if (lineRef.current) map.removeLayer(lineRef.current);
+                const latlngs = stopsRef.current.map(s => [s.geometry.coordinates[1], s.geometry.coordinates[0]]);
+                lineRef.current = L.polyline(latlngs, { color: 'blue' }).addTo(map);
+                onLineGenerated(latlngs);
             }
             map.pm.disableDraw();
         });
-    }, [map, onCoords, onStops, setRouteParams]);
+    }, [map, onStops, onLineGenerated]);
 
     return null;
 }
-
 function MapLoader({ route, onTrainReady, showTrain }) {
     const map = useMap();
     const trainMarkerRef = useRef(null);
@@ -135,6 +128,7 @@ function MapLoader({ route, onTrainReady, showTrain }) {
                 map.removeLayer(layer);
             }
         });
+
         if (route?.geojson?.coordinates) {
             const coords = route.geojson.coordinates.map(([lng, lat]) => [lat, lng]);
             const polyline = L.polyline(coords, { color: 'blue' }).addTo(map);
@@ -147,6 +141,7 @@ function MapLoader({ route, onTrainReady, showTrain }) {
                 onTrainReady({ marker, coords });
             }
         }
+
         (route?.stops || []).forEach((stop, idx) => {
             const [lng, lat] = stop.geometry.coordinates;
             let name = stop.properties.name;
@@ -158,6 +153,7 @@ function MapLoader({ route, onTrainReady, showTrain }) {
             });
             const marker = L.marker([lat, lng], { icon }).addTo(map);
             marker.bindPopup(`<b>${name}</b><br/>Time: ${stopTime}s<br/><button id="edit-${idx}">Edit</button>`);
+
             marker.on('popupopen', () => {
                 setTimeout(() => {
                     const btn = document.getElementById(`edit-${idx}`);
@@ -182,59 +178,41 @@ function MapLoader({ route, onTrainReady, showTrain }) {
     return null;
 }
 
-function MapDrawingTools({ onDraw }) {
-    const map = useMap();
-    useEffect(() => {
-        if (!map) return;
-        map.pm.addControls({
-            position: 'topleft', drawCircle: false, drawMarker: false, drawPolygon: false,
-            drawRectangle: false, drawText: false, drawPolyline: true, drawCircleMarker: true
-        });
-        map.on('pm:create', e => { onDraw && onDraw(e); map.pm.disableDraw(); });
-    }, [map, onDraw]);
-    return null;
-}
-
 export default function App() {
-    // Auth
     const [token, setToken] = useState(localStorage.getItem('token'));
     const [username, setUsername] = useState(null);
     const [role, setRole] = useState(null);
-    // Routes
     const [routes, setRoutes] = useState([]);
     const [selRoute, setSelRoute] = useState(null);
     const [showRouteList, setShowRouteList] = useState(false);
-    // Theme & menus
     const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
     const [showMainMenu, setShowMainMenu] = useState(false);
     const [showMapMenu, setShowMapMenu] = useState(false);
     const [activeTab, setActiveTab] = useState('account');
-    // Drawing & simulation
     const [routeName, setRouteName] = useState('');
-    const [drawnCoords, setDrawnCoords] = useState([]);
     const [drawnStops, setDrawnStops] = useState([]);
-    const [coords, setCoords] = useState(null);
-    const [stops, setStops] = useState([]);
-    const [routeParams, setRouteParams] = useState({ maxWagons: null, slope: null });
+    const [drawnCoords, setDrawnCoords] = useState([]);
     const [trainObj, setTrainObj] = useState(null);
     const [isRunning, setIsRunning] = useState(false);
-    const [info, setInfo] = useState('');
     const intervalRef = useRef(null);
+    const [info, setInfo] = useState('');
+    const [showAdminPanel, setShowAdminPanel] = useState(false);
 
-    // Apply theme
+
+    // App.js — część 3/5 — poprawiona i kompletna logika App()
+
     useEffect(() => {
         document.body.className = '';
         document.body.classList.add(`${theme}-theme`);
         localStorage.setItem('theme', theme);
     }, [theme]);
 
-    // On token change: decode and load
     useEffect(() => {
         if (!token) return;
         try {
-            const p = JSON.parse(atob(token.split('.')[1]));
-            setUsername(p.username);
-            setRole(p.role);
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            setUsername(payload.username);
+            setRole(payload.role);
             loadRoutes();
         } catch {
             setUsername(null);
@@ -242,7 +220,6 @@ export default function App() {
         }
     }, [token]);
 
-    // Load routes
     const loadRoutes = async () => {
         const res = await fetch('http://localhost:5000/routes', {
             headers: { Authorization: `Bearer ${token}` }
@@ -255,7 +232,6 @@ export default function App() {
         return true;
     };
 
-    // Show/hide route select
     const handleShowRoutes = async () => {
         if (!showRouteList) {
             const ok = await loadRoutes();
@@ -264,57 +240,116 @@ export default function App() {
         setShowRouteList(!showRouteList);
     };
 
-    // Auth handlers
-    const handleAuth = tok => { localStorage.setItem('token', tok); setToken(tok); };
-    const handleLogout = () => {
-        localStorage.removeItem('token');
-        setToken(null); setUsername(null); setRole(null); setRoutes([]);
+    const handleAuth = (tok) => {
+        localStorage.setItem('token', tok);
+        setToken(tok);
     };
 
-    // CRUD handlers
+    const handleLogout = () => {
+        localStorage.removeItem('token');
+        setToken(null);
+        setUsername(null);
+        setRole(null);
+        setRoutes([]);
+        setSelRoute(null);
+        setTrainObj(null);
+    };
+
     const handleSaveRoute = async () => {
-        if (!routeName || drawnCoords.length === 0) return alert('Provide name and draw route');
+        if (!routeName || drawnCoords.length < 2) return alert('Minimum 2 przystanki');
         const res = await fetch('http://localhost:5000/routes', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ name: routeName, route: drawnCoords, stops: drawnStops, max_wagons: routeParams.maxWagons, slope: routeParams.slope })
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ name: routeName, stops: drawnStops })
         });
         if (!res.ok) return alert(await res.text());
-        alert('Route saved'); setRouteName(''); setDrawnCoords([]); setDrawnStops([]); loadRoutes();
+        alert('Zapisano');
+        setRouteName('');
+        setDrawnCoords([]);
+        setDrawnStops([]);
+        loadRoutes();
     };
 
     const handleDeleteRoute = async () => {
-        const res = await fetch(`http://localhost:5000/routes/${selRoute.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(`http://localhost:5000/routes/${selRoute.route_id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+        });
         if (!res.ok) return alert(await res.text());
-        alert('Route deleted'); setSelRoute(null); loadRoutes();
+        alert('Usunięto trasę');
+        setSelRoute(null);
+        loadRoutes();
     };
 
-    const handleStartTrain = () => { if (!trainObj) return; let i = 0; setIsRunning(true); intervalRef.current = setInterval(() => { if (!trainObj.marker || i >= trainObj.coords.length) { clearInterval(intervalRef.current); setIsRunning(false); return; } trainObj.marker.setLatLng(trainObj.coords[i]); i++; }, 500); };
-    const handlePauseTrain = () => { clearInterval(intervalRef.current); setIsRunning(false); };
-    const handleResetTrain = () => { if (trainObj?.marker) trainObj.marker.setLatLng(trainObj.coords[0]); handlePauseTrain(); };
+    const handleStartTrain = () => {
+        if (!trainObj) return;
+        let i = 0;
+        setIsRunning(true);
+        intervalRef.current = setInterval(() => {
+            if (!trainObj.marker || i >= trainObj.coords.length) {
+                clearInterval(intervalRef.current);
+                setIsRunning(false);
+                return;
+            }
+            trainObj.marker.setLatLng(trainObj.coords[i]);
+            i++;
+        }, 500);
+    };
+
+    const handlePauseTrain = () => {
+        clearInterval(intervalRef.current);
+        setIsRunning(false);
+    };
+
+    const handleResetTrain = () => {
+        if (trainObj?.marker && trainObj.coords.length > 0) {
+            trainObj.marker.setLatLng(trainObj.coords[0]);
+        }
+        handlePauseTrain();
+    };
+    // App.js — część 4/5 — return z mapą, menu i panelem admina
 
     if (!token) return <AuthForm onAuth={handleAuth} />;
 
     return (
         <div className="app-container">
-            <MapContainer center={[49.62, 20.7]} zoom={13} style={{ height: '100%', width: '100%' }}>
+            <MapContainer
+                center={[49.62, 20.7]}
+                zoom={13}
+                style={{ height: '100%', width: '100%' }}
+                whenCreated={(map) => (window._mapRef = map)}
+            >
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                <MapWithDrawing onCoords={setCoords} onStops={setStops} setRouteParams={setRouteParams} />
-                <Simulation polylineCoords={coords} stops={stops} run={isRunning} paused={!isRunning} trainType="passenger" routeParams={routeParams} />
-                <MapLoader route={selRoute} onTrainReady={setTrainObj} showTrain />
-                <MapDrawingTools onDraw={e => {
-                    const geo = e.layer.toGeoJSON();
-                    if (geo.geometry.type === 'LineString') setDrawnCoords(geo.geometry.coordinates);
-                    if (geo.geometry.type === 'Point') {
-                        setDrawnStops(prev => [...prev, { type: 'Feature', geometry: geo.geometry, properties: { name: 'New Stop', stopTime: 0 } }]);
-                    }
-                }} />
+                <MapWithDrawing onStops={setDrawnStops} onLineGenerated={setDrawnCoords} />
+                <Simulation
+                    polylineCoords={drawnCoords}
+                    stops={drawnStops}
+                    run={isRunning}
+                    paused={!isRunning}
+                    trainType="passenger"
+                    routeParams={{}}
+                />
+                {selRoute && (
+                    <MapLoader
+                        route={selRoute}
+                        onTrainReady={setTrainObj}
+                        showTrain={true}
+                    />
+                )}
             </MapContainer>
 
             <div className="top-buttons">
-                <button onClick={() => { setShowMainMenu(!showMainMenu); setShowMapMenu(false); }}>Menu</button>
-                <button onClick={() => { setShowMapMenu(!showMapMenu); setShowMainMenu(false); }}>Map</button>
+                <button onClick={() => { setShowMainMenu(!showMainMenu); setShowMapMenu(false); setShowAdminPanel(false); }}>Menu</button>
+                <button onClick={() => { setShowMapMenu(!showMapMenu); setShowMainMenu(false); setShowAdminPanel(false); }}>Map</button>
+                {role === 'admin' && (
+                    <button onClick={() => { setShowAdminPanel(!showAdminPanel); setShowMainMenu(false); setShowMapMenu(false); }}>Admin Panel</button>
+                )}
             </div>
+
+
 
             {showMainMenu && (
                 <div className={`sidebar ${theme}-theme`}>
@@ -334,7 +369,11 @@ export default function App() {
                     {activeTab === 'theme' && (
                         <div style={{ padding: '1rem' }}>
                             <label htmlFor="theme-select">Select theme:</label>
-                            <select id="theme-select" value={theme} onChange={e => setTheme(e.target.value)}>
+                            <select
+                                id="theme-select"
+                                value={theme}
+                                onChange={(e) => setTheme(e.target.value)}
+                            >
                                 <option value="light">Light</option>
                                 <option value="dark">Dark</option>
                                 <option value="gray">Gray</option>
@@ -344,29 +383,96 @@ export default function App() {
                 </div>
             )}
 
+
             {showMapMenu && (
                 <div className={`mapmenu ${theme}-theme`}>
                     <h3>Map Options</h3>
-                    <input value={routeName} onChange={e => setRouteName(e.target.value)} placeholder="Route name" style={{ width: '100%', marginBottom: '0.5rem' }} />
-                    <button onClick={handleSaveRoute} style={{ width: '100%', marginBottom: '0.5rem' }}>Save route</button>
-                    <button onClick={loadRoutes} style={{ width: '100%', marginBottom: '0.5rem' }}>Refresh routes</button>
 
-                    <button onClick={handleShowRoutes} style={{ width: '100%', marginBottom: '0.5rem' }}>Wybierz trasę</button>
+                    <input
+                        value={routeName}
+                        onChange={(e) => setRouteName(e.target.value)}
+                        placeholder="Route name"
+                        style={{ width: '100%', marginBottom: '0.5rem' }}
+                    />
+
+                    <button onClick={handleSaveRoute} style={{ width: '100%', marginBottom: '0.5rem' }}>
+                        Save route
+                    </button>
+                    <button onClick={loadRoutes} style={{ width: '100%', marginBottom: '0.5rem' }}>
+                        Refresh routes
+                    </button>
+                    <button onClick={handleShowRoutes} style={{ width: '100%', marginBottom: '0.5rem' }}>
+                        Wybierz trasę
+                    </button>
 
                     {showRouteList && routes.length > 0 && (
-                        <select onChange={e => setSelRoute(routes.find(r => r.id.toString() === e.target.value))} style={{ width: '100%', marginBottom: '0.5rem' }} defaultValue="">
-                            <option value="" disabled>-- wybierz trasę --</option>
-                            {routes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                        <select
+                            onChange={(e) => {
+                                const r = routes.find(r => r.route_id.toString() === e.target.value);
+                                if (!r) return;
+                                setSelRoute(r); // bez parsowania — jak wcześniej
+                            }}
+                            style={{ width: '100%', marginBottom: '0.5rem' }}
+                            defaultValue=""
+                        >
+                            <option value="" disabled>
+                                -- wybierz trasę --
+                            </option>
+                            {routes.map((r) => (
+                                <option key={r.route_id} value={r.route_id}>
+                                    {r.name}
+                                </option>
+                            ))}
                         </select>
                     )}
 
-                    {role === 'admin' && <button onClick={handleDeleteRoute} style={{ width: '100%', marginBottom: '0.5rem', background: 'red', color: 'white' }}>Delete route</button>}
-                    <button onClick={handleStartTrain} disabled={!trainObj || isRunning} style={{ width: '100%', marginBottom: '0.25rem' }}>▶ Start</button>
-                    <button onClick={handlePauseTrain} disabled={!isRunning} style={{ width: '100%', marginBottom: '0.25rem' }}>⏸ Pause</button>
-                    <button onClick={handleResetTrain} style={{ width: '100%', marginBottom: '0.5rem' }}>🔁 Reset</button>
+                    {role === 'admin' && selRoute && (
+                        <button
+                            onClick={handleDeleteRoute}
+                            style={{
+                                width: '100%',
+                                marginBottom: '0.5rem',
+                                background: 'red',
+                                color: 'white'
+                            }}
+                        >
+                            Delete route
+                        </button>
+                    )}
+
+                    <button
+                        onClick={handleStartTrain}
+                        disabled={!trainObj || isRunning}
+                        style={{ width: '100%', marginBottom: '0.25rem' }}
+                    >
+                        ▶ Start
+                    </button>
+                    <button
+                        onClick={handlePauseTrain}
+                        disabled={!isRunning}
+                        style={{ width: '100%', marginBottom: '0.25rem' }}
+                    >
+                        ⏸ Pause
+                    </button>
+                    <button
+                        onClick={handleResetTrain}
+                        style={{ width: '100%', marginBottom: '0.5rem' }}
+                    >
+                        🔁 Reset
+                    </button>
+
                     <div className="info">{info}</div>
                 </div>
             )}
+
+
+            {showAdminPanel && (
+                <div className={`mapmenu ${theme}-theme`}>
+                    <AdminPanel token={token} />
+                </div>
+            )}
+            
         </div>
     );
 }
+
