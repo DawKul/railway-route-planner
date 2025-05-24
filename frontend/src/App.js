@@ -487,6 +487,7 @@ function MapLoader({ route, onTrainReady, showTrain, setRouteParams, onCoords })
                 });
 
             });
+            /*
             const marker = L.marker([lat, lng], { icon }).addTo(map);
             marker.bindPopup(`<b>${name}</b><br/>Time: ${stopTime}s<br/><button id="edit-${idx}">Edit</button>`);
             marker.on('popupopen', () => {
@@ -506,8 +507,8 @@ function MapLoader({ route, onTrainReady, showTrain, setRouteParams, onCoords })
                         }
                     };
                 }, 100);
-            });
-        });
+            });*/
+        };
     }, [map, route, onTrainReady, showTrain]);
 
     return null;
