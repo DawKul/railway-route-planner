@@ -8,6 +8,10 @@ import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import './theme.css';
 import AuthForm from './AuthForm';
 import AdminPanel from './AdminPanel';
+import MapLoader from './MapLoader';
+import Simulation from './Simulation';
+import SidebarMenu from './SidebarMenu';
+import RouteFormPopup from './RouteFormPopup';
 
 function calculateDistanceKm(latlngs) {
     let dist = 0;
@@ -33,37 +37,8 @@ function calculateTravelTime({ distanceKm, slopePercent = 0, maxWagons = 5, actu
     return { formatted: formatTime(totalSec) };
 }
 
-function Simulation({ polylineCoords, stops, run, paused, trainType, routeParams }) {
-    const map = useMap();
-    const markerRef = useRef(null);
-    const timeoutRef = useRef(null);
-    const indexRef = useRef(0);
 
-    useEffect(() => {
-        if (!map || !polylineCoords || !run || paused) return;
-        if (!markerRef.current) {
-            const icon = new L.Icon({ iconUrl: '/train.png', iconSize: [32, 32], iconAnchor: [16, 16] });
-            markerRef.current = L.marker(polylineCoords[0], { icon }).addTo(map);
-        }
-        indexRef.current = 0;
-
-        function move() {
-            const i = indexRef.current;
-            if (i >= polylineCoords.length) return;
-            const pos = polylineCoords[i];
-            markerRef.current.setLatLng(pos);
-            let delay = 500;
-            indexRef.current++;
-            timeoutRef.current = setTimeout(move, delay);
-        }
-
-        move();
-        return () => clearTimeout(timeoutRef.current);
-    }, [map, polylineCoords, run, paused, trainType, routeParams, stops]);
-
-    return null;
-}
-// App.js — część 2/5 — MapWithDrawing i początek App()
+// MapWithDrawing i początek App()
 
 function MapWithDrawing({ onStops, onLineGenerated }) {
     const map = useMap();
@@ -117,66 +92,7 @@ function MapWithDrawing({ onStops, onLineGenerated }) {
 
     return null;
 }
-function MapLoader({ route, onTrainReady, showTrain }) {
-    const map = useMap();
-    const trainMarkerRef = useRef(null);
 
-    useEffect(() => {
-        if (!map) return;
-        map.eachLayer(layer => {
-            if (layer instanceof L.Polyline || layer instanceof L.Marker || layer instanceof L.CircleMarker) {
-                map.removeLayer(layer);
-            }
-        });
-
-        if (route?.geojson?.coordinates) {
-            const coords = route.geojson.coordinates.map(([lng, lat]) => [lat, lng]);
-            const polyline = L.polyline(coords, { color: 'blue' }).addTo(map);
-            map.fitBounds(polyline.getBounds());
-
-            if (showTrain && coords.length > 0) {
-                const icon = new L.Icon({ iconUrl: '/train.png', iconSize: [32, 32], iconAnchor: [16, 16] });
-                const marker = L.marker(coords[0], { icon }).addTo(map);
-                trainMarkerRef.current = marker;
-                onTrainReady({ marker, coords });
-            }
-        }
-
-        (route?.stops || []).forEach((stop, idx) => {
-            const [lng, lat] = stop.geometry.coordinates;
-            let name = stop.properties.name;
-            let stopTime = stop.properties.stopTime;
-            const icon = L.divIcon({
-                className: 'stop-icon',
-                html: '<div style="width:14px;height:14px;background:red;border-radius:50%;border:2px solid white;"></div>',
-                iconSize: [14, 14], iconAnchor: [7, 7]
-            });
-            const marker = L.marker([lat, lng], { icon }).addTo(map);
-            marker.bindPopup(`<b>${name}</b><br/>Time: ${stopTime}s<br/><button id="edit-${idx}">Edit</button>`);
-
-            marker.on('popupopen', () => {
-                setTimeout(() => {
-                    const btn = document.getElementById(`edit-${idx}`);
-                    if (btn) btn.onclick = ev => {
-                        ev.stopPropagation();
-                        const newName = prompt('New name:', name);
-                        const newTime = prompt('New time (s):', stopTime);
-                        if (newName !== null && newTime !== null) {
-                            stop.properties.name = newName;
-                            stop.properties.stopTime = parseInt(newTime, 10);
-                            name = newName;
-                            stopTime = parseInt(newTime, 10);
-                            marker.setPopupContent(`<b>${name}</b><br/>Time: ${stopTime}s<br/><button id="edit-${idx}">Edit</button>`);
-                            marker.openPopup();
-                        }
-                    };
-                }, 100);
-            });
-        });
-    }, [map, route, onTrainReady, showTrain]);
-
-    return null;
-}
 
 export default function App() {
     const [token, setToken] = useState(localStorage.getItem('token'));
@@ -190,6 +106,7 @@ export default function App() {
     const [showMapMenu, setShowMapMenu] = useState(false);
     const [activeTab, setActiveTab] = useState('account');
     const [routeName, setRouteName] = useState('');
+    const [resetSignal, setResetSignal] = useState(0);
     const [drawnStops, setDrawnStops] = useState([]);
     const [drawnCoords, setDrawnCoords] = useState([]);
     const [trainObj, setTrainObj] = useState(null);
@@ -197,6 +114,8 @@ export default function App() {
     const intervalRef = useRef(null);
     const [info, setInfo] = useState('');
     const [showAdminPanel, setShowAdminPanel] = useState(false);
+    const [routeParams, setRouteParams] = useState({});
+
 
 
     // App.js — część 3/5 — poprawiona i kompletna logika App()
@@ -305,12 +224,22 @@ export default function App() {
     };
 
     const handleResetTrain = () => {
-        if (trainObj?.marker && trainObj.coords.length > 0) {
-            trainObj.marker.setLatLng(trainObj.coords[0]);
-        }
-        handlePauseTrain();
+        setIsRunning(false);
+        setTrainObj(null);
+        setDrawnCoords([]);
+        setDrawnStops([]);
+        setRouteParams({});
+        setResetSignal(prev => prev + 1);
+
+        setTrainObj((prev) => {
+            if (prev?.marker) prev.marker.remove();
+            return null;
+        });
+
+        setResetSignal(prev => prev + 1);
     };
-    // App.js — część 4/5 — return z mapą, menu i panelem admina
+
+    // return z mapą, menu i panelem admina
 
     if (!token) return <AuthForm onAuth={handleAuth} />;
 
@@ -324,19 +253,26 @@ export default function App() {
             >
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                 <MapWithDrawing onStops={setDrawnStops} onLineGenerated={setDrawnCoords} />
-                <Simulation
-                    polylineCoords={drawnCoords}
-                    stops={drawnStops}
-                    run={isRunning}
-                    paused={!isRunning}
-                    trainType="passenger"
-                    routeParams={{}}
-                />
+                {selRoute && isRunning && (
+                    <Simulation
+                        polylineCoords={selRoute.geojson.coordinates.map(([lng, lat]) => [lat, lng])}
+                        stops={selRoute.stops}
+                        run={true}
+                        paused={false}
+                        trainType={routeParams.trainType || 'passenger'}
+                        routeParams={routeParams}
+                        resetSignal={resetSignal}
+                    />
+                )}
+
+
+
                 {selRoute && (
                     <MapLoader
                         route={selRoute}
                         onTrainReady={setTrainObj}
                         showTrain={true}
+                        setRouteParams={setRouteParams}
                     />
                 )}
             </MapContainer>
@@ -352,36 +288,18 @@ export default function App() {
 
 
             {showMainMenu && (
-                <div className={`sidebar ${theme}-theme`}>
-                    <div className="tab-buttons">
-                        <button onClick={() => setActiveTab('account')}>Account</button>
-                        <button onClick={() => setActiveTab('map')}>Map</button>
-                        <button onClick={() => setActiveTab('theme')}>Theme</button>
-                    </div>
-                    {activeTab === 'account' && (
-                        <div style={{ padding: '1rem' }}>
-                            <p>Zalogowany jako:</p>
-                            <h3>{username}</h3>
-                            <button onClick={handleLogout}>Logout</button>
-                        </div>
-                    )}
-                    {activeTab === 'map' && <p>Map settings coming soon...</p>}
-                    {activeTab === 'theme' && (
-                        <div style={{ padding: '1rem' }}>
-                            <label htmlFor="theme-select">Select theme:</label>
-                            <select
-                                id="theme-select"
-                                value={theme}
-                                onChange={(e) => setTheme(e.target.value)}
-                            >
-                                <option value="light">Light</option>
-                                <option value="dark">Dark</option>
-                                <option value="gray">Gray</option>
-                            </select>
-                        </div>
-                    )}
-                </div>
+                <SidebarMenu
+                    theme={theme}
+                    setTheme={setTheme}
+                    username={username}
+                    handleLogout={handleLogout}
+                    activeTab={activeTab}
+                    setActiveTab={setActiveTab}
+                    role={role}
+                    token={token}
+                />
             )}
+
 
 
             {showMapMenu && (
@@ -410,8 +328,15 @@ export default function App() {
                             onChange={(e) => {
                                 const r = routes.find(r => r.route_id.toString() === e.target.value);
                                 if (!r) return;
-                                setSelRoute(r); // bez parsowania — jak wcześniej
+
+                                const route = {
+                                    ...r,
+                                    geojson: typeof r.geojson === 'string' ? JSON.parse(r.geojson) : r.geojson,
+                                    stops: typeof r.stops === 'string' ? JSON.parse(r.stops) : r.stops,
+                                };
+                                setSelRoute(route);
                             }}
+
                             style={{ width: '100%', marginBottom: '0.5rem' }}
                             defaultValue=""
                         >

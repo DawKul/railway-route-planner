@@ -1,89 +1,79 @@
-﻿// AdminPanel.js – panel administratora z zakładkami "Trasy" i "Użytkownicy"
+﻿
 import React, { useEffect, useState } from 'react';
 
 export default function AdminPanel({ token }) {
-    const [activeTab, setActiveTab] = useState('routes');
-    const [routes, setRoutes] = useState([]);
     const [users, setUsers] = useState([]);
+    const [routes, setRoutes] = useState([]);
 
     useEffect(() => {
-        fetch('http://localhost:5000/admin/routes', {
-            headers: { Authorization: `Bearer ${token}` }
-        })
-            .then(res => res.json())
-            .then(setRoutes)
-            .catch(err => console.error('Failed to load routes:', err));
+        loadUsers();
+        loadRoutes();
+    }, []);
 
-        fetch('http://localhost:5000/admin/users', {
+    const loadUsers = async () => {
+        const res = await fetch('http://localhost:5000/admin/users', {
             headers: { Authorization: `Bearer ${token}` }
-        })
-            .then(res => res.json())
-            .then(setUsers)
-            .catch(err => console.error('Failed to load users:', err));
-    }, [token]);
-
-    const deleteRoute = (id) => {
-        fetch(`http://localhost:5000/admin/routes/${id}`, {
-            method: 'DELETE',
-            headers: { Authorization: `Bearer ${token}` }
-        })
-            .then(res => res.ok && setRoutes(routes.filter(r => r.route_id !== id)));
+        });
+        const data = await res.json();
+        setUsers(data);
     };
 
-    const deleteUser = (id) => {
-        fetch(`http://localhost:5000/admin/users/${id}`, {
-            method: 'DELETE',
+    const loadRoutes = async () => {
+        const res = await fetch('http://localhost:5000/admin/routes', {
             headers: { Authorization: `Bearer ${token}` }
-        })
-            .then(res => res.ok && setUsers(users.filter(u => u.user_id !== id)));
+        });
+        const data = await res.json();
+        setRoutes(data);
     };
 
-    const promoteUser = (id) => {
-        fetch(`http://localhost:5000/admin/users/${id}/promote`, {
-            method: 'PUT',
+    const deleteUser = async (id) => {
+        await fetch(`http://localhost:5000/admin/users/${id}`, {
+            method: 'DELETE',
             headers: { Authorization: `Bearer ${token}` }
-        })
-            .then(res => res.ok && setUsers(users.map(u => u.user_id === id ? { ...u, role: 'admin' } : u)));
+        });
+        loadUsers();
+    };
+
+    const promoteToAdmin = async (id) => {
+        await fetch(`http://localhost:5000/admin/users/${id}/promote`, {
+            method: 'PATCH',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        loadUsers();
+    };
+
+    const deleteRoute = async (id) => {
+        await fetch(`http://localhost:5000/routes/${id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        loadRoutes();
     };
 
     return (
         <div className="admin-panel">
-            <h2>Admin Panel</h2>
-            <div className="tab-buttons">
-                <button onClick={() => setActiveTab('routes')}>Trasy</button>
-                <button onClick={() => setActiveTab('users')}>Użytkownicy</button>
-            </div>
+            <h3>Trasy</h3>
+            <ul>
+                {routes.map((r) => (
+                    <li key={r.route_id}>
+                        {r.name} – <i>{r.username}</i>
+                        <button onClick={() => deleteRoute(r.route_id)}>Usuń</button>
+                    </li>
+                ))}
+            </ul>
 
-            {activeTab === 'routes' && (
-                <div>
-                    <h3>Lista tras</h3>
-                    <ul>
-                        {routes.map(r => (
-                            <li key={r.route_id}>
-                                <b>{r.name}</b> – utworzona przez <i>{r.username}</i>
-                                <button onClick={() => deleteRoute(r.route_id)}>Usuń</button>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
-
-            {activeTab === 'users' && (
-                <div>
-                    <h3>Lista użytkowników</h3>
-                    <ul>
-                        {users.map(u => (
-                            <li key={u.user_id}>
-                                {u.username} ({u.role})
-                                {u.role !== 'admin' && (
-                                    <button onClick={() => promoteUser(u.user_id)}>Nadaj admina</button>
-                                )}
-                                <button onClick={() => deleteUser(u.user_id)}>Usuń</button>
-                            </li>
-                        ))}
-                    </ul>
-                </div>
-            )}
+            <h3>Użytkownicy</h3>
+            <ul>
+                {users.map((u) => (
+                    <li key={u.id}>
+                        {u.username} ({u.role})
+                        <button onClick={() => deleteUser(u.id)}>Usuń</button>
+                        {u.role !== 'admin' && (
+                            <button onClick={() => promoteToAdmin(u.id)}>Nadaj admina</button>
+                        )}
+                    </li>
+                ))}
+            </ul>
         </div>
     );
 }
