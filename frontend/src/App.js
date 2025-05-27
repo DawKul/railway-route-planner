@@ -393,85 +393,86 @@ export default function App() {
 
 
             {showMapMenu && (
-                <div className={`mapmenu ${theme}-theme`}>
-                    <h3>Map Options</h3>
+  <div className={`mapmenu ${theme}-theme`}>
+    <h3>Map Options</h3>
 
-                    <input
-                        value={routeName}
-                        onChange={(e) => setRouteName(e.target.value)}
-                        placeholder="Route name"
-                        style={{ width: '100%', marginBottom: '0.5rem' }}
-                    />
+    
+    {!guest && (
+      <>
+        <input
+          value={routeName}
+          onChange={e => setRouteName(e.target.value)}
+          placeholder="Route name"
+          style={{ width:'100%', marginBottom:'0.5rem' }}
+        />
+        <button
+          onClick={handleSaveRoute}
+          style={{ width:'100%', marginBottom:'0.5rem' }}
+        >
+          Save route
+        </button>
+        <button
+          onClick={loadRoutes}
+          style={{ width:'100%', marginBottom:'0.5rem' }}
+        >
+          Refresh routes
+        </button>
+        {role === 'admin' && (
+          <button
+            onClick={handleDeleteRoute}
+            style={{ width:'100%', marginBottom:'0.5rem', background:'red', color:'white' }}
+          >
+            Delete route
+          </button>
+        )}
+      </>
+    )}
 
-                    <button onClick={handleSaveRoute} style={{ width: '100%', marginBottom: '0.5rem' }}>
-                        Save route
-                    </button>
-                    <button onClick={loadRoutes} style={{ width: '100%', marginBottom: '0.5rem' }}>
-                        Refresh routes
-                    </button>
-                    <button onClick={handleShowRoutes} style={{ width: '100%', marginBottom: '0.5rem' }}>
-                        Wybierz trasę
-                    </button>
+    
+    <button
+      onClick={handleShowRoutes}
+      style={{ width:'100%', marginBottom:'0.5rem' }}
+    >
+      Wybierz trasę
+    </button>
+    {showRouteList && (
+      <select
+        onChange={e => setSelRoute(routes.find(r => r.id.toString() === e.target.value))}
+        style={{ width:'100%', marginBottom:'0.5rem' }}
+        defaultValue=""
+      >
+        <option value="" disabled>-- wybierz trasę --</option>
+        {routes.map(r => (
+          <option key={r.id} value={r.id}>{r.name}</option>
+        ))}
+      </select>
+    )}
 
-                    {showRouteList && routes.length > 0 && (
-                        <select
-                            onChange={(e) => {
-                                const r = routes.find(r => r.route_id.toString() === e.target.value);
-                                if (!r) return;
-                                setSelRoute(r); // bez parsowania — jak wcześniej
-                            }}
-                            style={{ width: '100%', marginBottom: '0.5rem' }}
-                            defaultValue=""
-                        >
-                            <option value="" disabled>
-                                -- wybierz trasę --
-                            </option>
-                            {routes.map((r) => (
-                                <option key={r.route_id} value={r.route_id}>
-                                    {r.name}
-                                </option>
-                            ))}
-                        </select>
-                    )}
+    <button
+      onClick={handleStartTrain}
+      disabled={!trainObj || isRunning}
+      style={{ width:'100%', marginBottom:'0.25rem' }}
+    >
+      ▶ Start
+    </button>
+    <button
+      onClick={handlePauseTrain}
+      disabled={!isRunning}
+      style={{ width:'100%', marginBottom:'0.25rem' }}
+    >
+      ⏸ Pause
+    </button>
+    <button
+      onClick={handleResetTrain}
+      style={{ width:'100%', marginBottom:'0.5rem' }}
+    >
+      🔁 Reset
+    </button>
 
-                    {role === 'admin' && selRoute && (
-                        <button
-                            onClick={handleDeleteRoute}
-                            style={{
-                                width: '100%',
-                                marginBottom: '0.5rem',
-                                background: 'red',
-                                color: 'white'
-                            }}
-                        >
-                            Delete route
-                        </button>
-                    )}
+    <div className="info">{info}</div>
+  </div>
+)}
 
-                    <button
-                        onClick={handleStartTrain}
-                        disabled={!trainObj || isRunning}
-                        style={{ width: '100%', marginBottom: '0.25rem' }}
-                    >
-                        ▶ Start
-                    </button>
-                    <button
-                        onClick={handlePauseTrain}
-                        disabled={!isRunning}
-                        style={{ width: '100%', marginBottom: '0.25rem' }}
-                    >
-                        ⏸ Pause
-                    </button>
-                    <button
-                        onClick={handleResetTrain}
-                        style={{ width: '100%', marginBottom: '0.5rem' }}
-                    >
-                        🔁 Reset
-                    </button>
-
-                    <div className="info">{info}</div>
-                </div>
-            )}
 
 
             {showAdminPanel && (
