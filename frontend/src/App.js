@@ -63,8 +63,8 @@ function Simulation({ polylineCoords, stops, run, paused, trainType, routeParams
 
     return null;
 }
-// App.js — część 2/5 — MapWithDrawing i początek App()
 
+// App.js — część 2/5 — MapWithDrawing i początek App()
 function MapWithDrawing({ onStops, onLineGenerated }) {
     const map = useMap();
     const stopsRef = useRef([]);
@@ -104,7 +104,43 @@ function MapWithDrawing({ onStops, onLineGenerated }) {
                 stopsRef.current.push(stop);
                 onStops([...stopsRef.current]);
 
-                layer.bindPopup(`${name} (${stopTime}s)`).openPopup();
+                layer.bindPopup(
+                    `<b>${name}</b><br/>
+                    Stop time: ${stopTime}s<br/>
+                    <button id="edit-stop">Edit</button>`
+                ).openPopup();
+
+                //Przycisk edycji przystanku
+                layer.on("popupopen", () => {
+                    setTimeout(() => {
+                        const btn = document.getElementById("edit-stop");
+                        if (!btn) return;
+
+                        btn.onclick = (ev) => {
+                            ev.stopPropagation();
+                            const newName = prompt("Stop name:", stop.properties.name);
+                            const newIn   = parseInt(prompt("Passengers in:",  stop.properties.passengersIn), 10);
+                            const newOut  = parseInt(prompt("Passengers out:", stop.properties.passengersOut), 10);
+                            const newTime = (newIn + newOut);
+                            if (newName && !isNaN(newIn) && !isNaN(newOut)) {
+                                // Aktualizacja właściwości
+                                stop.properties = {
+                                    name: newName,
+                                    stopTime: newTime,
+                                    passengersIn: newIn,
+                                    passengersOut: newOut
+                                };
+                                // Aktualizacja treści tooltipa
+                                layer.setPopupContent(
+                                    `<b>${newName}</b><br/>
+                                    Stop time: ${newTime}s<br/>
+                                    <button id="edit-stop">Edit</button>`
+                                );
+                                layer.openPopup();
+                            }
+                        };
+                    }, 50);
+                });
 
                 if (lineRef.current) map.removeLayer(lineRef.current);
                 const latlngs = stopsRef.current.map(s => [s.geometry.coordinates[1], s.geometry.coordinates[0]]);
@@ -117,6 +153,7 @@ function MapWithDrawing({ onStops, onLineGenerated }) {
 
     return null;
 }
+
 function MapLoader({ route, onTrainReady, showTrain }) {
     const map = useMap();
     const trainMarkerRef = useRef(null);
