@@ -28,9 +28,21 @@ export default function MapWithDrawing({ onStops, onLineGenerated, onFinalStop }
 
     let currentMarkers = [];
 
+    // Disable the default marker prompt
+    map.pm.setGlobalOptions({
+      markerEditable: false,
+      templineStyle: {},
+      hintlineStyle: {},
+      snappable: false,
+      snapDistance: 20,
+      requireSnapToFinish: false,
+    });
+
     map.on('pm:create', (e) => {
       if (e.layer instanceof L.Marker) {
         const marker = e.layer;
+        const pt = marker.getLatLng();
+        
         marker.setIcon(
           L.divIcon({
             className: 'stop-icon',
@@ -40,12 +52,92 @@ export default function MapWithDrawing({ onStops, onLineGenerated, onFinalStop }
           })
         );
 
-        marker.options.stopData = {
+        // Create stop with default values
+        const stopData = {
           name: `P${currentMarkers.length + 1}`,
-          stopTime: 10,
+          stopTime: 0,
+          passengersIn: 0,
+          passengersOut: 0
         };
+        marker.options.stopData = stopData;
 
-        marker.bindPopup(createStopPopup(marker));
+        const createStopPopupContent = (props) => `
+          <div style="min-width: 200px;">
+            <h4 style="margin: 0 0 10px 0;">Edycja parametrów przystanku</h4>
+            <div style="margin-bottom: 8px;">
+              <label>Nazwa przystanku:</label>
+              <input type="text" id="stop-name" value="${props.name}" style="width: 100%;">
+            </div>
+            <div style="margin-bottom: 8px;">
+              <label>Czas postoju (s):</label>
+              <input type="number" id="stop-time" min="0" value="${props.stopTime}" style="width: 60px;">
+            </div>
+            <div style="margin-bottom: 8px;">
+              <label>Pasażerowie wsiadający:</label>
+              <input type="number" id="passengers-in" min="0" value="${props.passengersIn}" style="width: 60px;">
+            </div>
+            <div style="margin-bottom: 8px;">
+              <label>Pasażerowie wysiadający:</label>
+              <input type="number" id="passengers-out" min="0" value="${props.passengersOut}" style="width: 60px;">
+            </div>
+            <button id="save-stop-params" style="width: 100%; padding: 5px; margin-top: 5px;">Zapisz parametry</button>
+            <button id="set-final" style="width: 100%; padding: 5px; margin-top: 5px;">Ustaw jako końcowy</button>
+          </div>
+        `;
+
+        // Bind popup with form but don't open automatically
+        marker.bindPopup(createStopPopupContent(stopData));
+
+        // Add tooltip with initial name
+        marker.bindTooltip(`<b>${stopData.name}</b>`);
+
+        marker.on('popupopen', () => {
+          setTimeout(() => {
+            const saveBtn = document.getElementById('save-stop-params');
+            const finalBtn = document.getElementById('set-final');
+            if (!saveBtn || !finalBtn) return;
+
+            saveBtn.onclick = () => {
+              const name = document.getElementById('stop-name').value;
+              const stopTime = parseInt(document.getElementById('stop-time').value) || 0;
+              const passengersIn = parseInt(document.getElementById('passengers-in').value) || 0;
+              const passengersOut = parseInt(document.getElementById('passengers-out').value) || 0;
+
+              // Update stop data
+              marker.options.stopData = {
+                name,
+                stopTime,
+                passengersIn,
+                passengersOut
+              };
+
+              // Update tooltip with full info after saving
+              marker.bindTooltip(
+                `<b>${name}</b><br/>` +
+                `Postój: ${stopTime}s<br/>` +
+                `Pasażerowie (+${passengersIn}/-${passengersOut})`
+              );
+
+              updateStops();
+              map.closePopup();
+            };
+
+            finalBtn.onclick = () => {
+              if (finalStopMarker) resetMarkerIcon(finalStopMarker);
+              finalStopMarker = marker;
+              marker.setIcon(
+                L.divIcon({
+                  className: 'stop-icon',
+                  html: '<div style="width:20px;height:20px;background:black;border-radius:50%;border:2px solid white;"></div>',
+                  iconSize: [20, 20],
+                  iconAnchor: [10, 10],
+                })
+              );
+              onFinalStop?.(marker.getLatLng());
+              map.closePopup();
+            };
+          }, 50);
+        });
 
         marker.on('move', () => updatePolyline());
         markerLayer.addLayer(marker);
@@ -54,43 +146,6 @@ export default function MapWithDrawing({ onStops, onLineGenerated, onFinalStop }
         updateStops();
       }
     });
-
-    function createStopPopup(marker) {
-      const props = marker.options.stopData;
-      const div = document.createElement('div');
-
-      div.innerHTML = `
-        <label>Nazwa: <input id="stop-name" value="${props.name}" /></label><br/>
-        <label>Postój (s): <input type="number" id="stop-time" value="${props.stopTime}" /></label><br/>
-        <button id="set-final">Ustaw jako końcowy</button>
-      `;
-
-      setTimeout(() => {
-        div.querySelector('#stop-name').onchange = (e) => {
-          props.name = e.target.value;
-          updateStops();
-        };
-        div.querySelector('#stop-time').onchange = (e) => {
-          props.stopTime = parseInt(e.target.value, 10) || 0;
-          updateStops();
-        };
-        div.querySelector('#set-final').onclick = () => {
-          if (finalStopMarker) resetMarkerIcon(finalStopMarker);
-          finalStopMarker = marker;
-          marker.setIcon(
-            L.divIcon({
-              className: 'stop-icon',
-              html: '<div style="width:20px;height:20px;background:black;border-radius:50%;border:2px solid white;"></div>',
-              iconSize: [20, 20],
-              iconAnchor: [10, 10],
-            })
-          );
-          onFinalStop?.(marker.getLatLng());
-        };
-      }, 50);
-
-      return div;
-    }
 
     function resetMarkerIcon(marker) {
       marker.setIcon(
