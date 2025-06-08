@@ -1,14 +1,14 @@
-﻿// App.js – pełny, poprawny plik scalający funkcje Szymon i D_Doktor
-import React, { useState, useEffect, useRef } from "react";
-import { MapContainer, TileLayer, useMap } from "react-leaflet";
-import * as L from "leaflet";
-import "leaflet/dist/leaflet.css";
-import "@geoman-io/leaflet-geoman-free";
-import "@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css";
-import "./theme.css";
-import AuthForm from "./AuthForm";
+﻿// frontend/src/App.js
+import React, { useState, useEffect, useRef } from 'react';
+import { MapContainer, TileLayer, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import '@geoman-io/leaflet-geoman-free';
+import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
+import './theme.css';
+import AuthForm from './AuthForm';
 
-// Oblicza długość trasy w km na podstawie tablicy LatLng
+// --- Helper functions ---
 function calculateDistanceKm(latlngs) {
     let dist = 0;
     for (let i = 1; i < latlngs.length; i++) {
@@ -17,25 +17,25 @@ function calculateDistanceKm(latlngs) {
     return dist / 1000;
 }
 
-// Formatuje czas (s) na "X min Y s"
 function formatTime(seconds) {
     const mins = Math.floor(seconds / 60);
     const secs = Math.round(seconds % 60);
     return `${mins} min ${secs} s`;
 }
 
-// Oblicza czas przejazdu biorąc pod uwagę nachylenie, wagony i postoje
-function calculateTravelTime({ distanceKm, avgSpeed = 60, slopePercent = 0, maxWagons = 5, actualWagons = 5, stops = [] }) {
-    const slopeModifier = 1 - Math.abs(slopePercent) * 0.02;
-    const overloadModifier = actualWagons > maxWagons ? 1 - 0.05 * (actualWagons - maxWagons) : 1;
-    const effectiveSpeed = avgSpeed * slopeModifier * overloadModifier;
+function calculateTravelTime({ distanceKm, slopePercent = 0, maxWagons = 5, actualWagons = 5, stops = [] }) {
+    const slopeMod = 1 - Math.abs(slopePercent) * 0.02;
+    const overloadMod = actualWagons > maxWagons
+        ? 1 - 0.05 * (actualWagons - maxWagons)
+        : 1;
+    const effectiveSpeed = 60 * slopeMod * overloadMod;
     const drivingTimeSec = (distanceKm / effectiveSpeed) * 3600;
     const stopTimeSec = stops.reduce((sum, stop) => sum + (stop.properties?.stopTime || 0), 0);
     const totalSec = drivingTimeSec + stopTimeSec;
-    return { drivingTime: drivingTimeSec, stopTime: stopTimeSec, totalTime: totalSec, formatted: formatTime(totalSec) };
+    return { formatted: formatTime(totalSec) };
 }
 
-// Komponent symulacji ruchu pociągu
+// --- Map Components ---
 function Simulation({ polylineCoords, stops, run, paused, trainType, routeParams }) {
     const map = useMap();
     const markerRef = useRef(null);
@@ -44,30 +44,19 @@ function Simulation({ polylineCoords, stops, run, paused, trainType, routeParams
 
     useEffect(() => {
         if (!map || !polylineCoords || !run || paused) return;
-        // Inicjalizacja markera
         if (!markerRef.current) {
-            const trainIcon = new L.Icon({ iconUrl: "/train.png", iconSize: [32, 32], iconAnchor: [16, 16] });
-            markerRef.current = L.marker(polylineCoords[0], { icon: trainIcon }).addTo(map);
+            const icon = new L.Icon({ iconUrl: '/train.png', iconSize: [32, 32], iconAnchor: [16, 16] });
+            markerRef.current = L.marker(polylineCoords[0], { icon }).addTo(map);
         }
         indexRef.current = 0;
 
         function move() {
             const i = indexRef.current;
             if (i >= polylineCoords.length) return;
-            const latlng = polylineCoords[i];
-            markerRef.current.setLatLng(latlng);
-            // Sprawdź postój
-            const foundStop = stops.find(s => {
-                const [lng, lat] = s.geometry.coordinates;
-                return Math.abs(latlng[0] - lat) < 1e-4 && Math.abs(latlng[1] - lng) < 1e-4;
-            });
-            let delay = 100;
-            if (foundStop && trainType === "passenger") delay = foundStop.properties.stopTime * 1000;
-            if (routeParams.slope) delay *= 1 + routeParams.slope / 100;
-            if (routeParams.maxWagons && trainType === "freight") delay *= 1 + routeParams.maxWagons / 50;
-            if (foundStop && trainType === "passenger") {
-                markerRef.current.bindPopup(`Postój: ${foundStop.properties.name} (${foundStop.properties.stopTime}s)`).openPopup();
-            }
+            const pos = polylineCoords[i];
+            markerRef.current.setLatLng(pos);
+
+            let delay = 500;
             indexRef.current++;
             timeoutRef.current = setTimeout(move, delay);
         }
@@ -79,14 +68,27 @@ function Simulation({ polylineCoords, stops, run, paused, trainType, routeParams
     return null;
 }
 
-// Komponent do rysowania trasy i dodawania przystanków + parametrów trasy
 function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
     const map = useMap();
     const stopsRef = [];
 
     useEffect(() => {
         if (!map) return;
-        map.pm.addControls({ position: "topleft", drawCircle: false, drawMarker: false, drawPolygon: false, drawRectangle: false, drawText: false, drawPolyline: true, drawCircleMarker: true });
+
+        map.off("pm:create");
+        map.pm.addControls({ 
+            position: "topleft", 
+            drawCircle: false, 
+            drawMarker: false, 
+            drawPolygon: false, 
+            drawRectangle: false, 
+            drawText: false, 
+            drawPolyline: true, 
+            drawCircleMarker: true,
+            editMode: true,
+            dragMode: true,
+            removalMode: true,
+        });
         map.on("pm:create", e => {
             const layer = e.layer;
             if (layer instanceof L.Polyline) {
@@ -96,22 +98,208 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
                 const actualW = parseInt(prompt("Aktualna liczba wagonów:"), 10);
                 const distKm = calculateDistanceKm(layer.getLatLngs());
                 const timeRes = calculateTravelTime({ distanceKm: distKm, slopePercent: slope, maxWagons: maxW, actualWagons: actualW, stops: stopsRef });
-                layer.bindTooltip(`Długość: ${distKm.toFixed(2)} km<br>Czas: ${timeRes.formatted}`, { sticky: true });
+                layer.bindTooltip(
+                    `Długość: ${distKm.toFixed(2)} km<br>
+                    Czas: ${timeRes.formatted}`, 
+                    { sticky: true }
+                );
                 onCoords(coords);
                 setRouteParams({ maxWagons: maxW, slope });
+                layer.bindPopup(
+                    `<button id="edit-route">Edytuj</button>`
+                );
+                layer.on("popupopen", () => {
+                    setTimeout(() => {
+                        const btn = document.getElementById("edit-route");
+                        if (!btn) return;
+
+                        btn.onclick = (ev) => {
+                            ev.stopPropagation();
+                            const newmaxW = parseInt(prompt("Nowa maksymalna liczba wagonów:"), 10);
+                            const newslope = parseFloat(prompt("Nowe nachylenie trasy (%):"));
+                            const newactualW = parseInt(prompt("Nowa aktualna liczba wagonów:"), 10);
+                            const newdistKm = calculateDistanceKm(layer.getLatLngs());
+                            const newtimeRes = calculateTravelTime({ 
+                                distanceKm: newdistKm, 
+                                slopePercent: newslope, 
+                                maxWagons: newmaxW, 
+                                actualWagons: newactualW, 
+                                stops: stopsRef 
+                            });
+                            if ( !isNaN(newmaxW) && !isNaN(newslope) && !isNaN(newactualW)) {
+                                // zaktualizuj właściwości
+                                setRouteParams({ maxWagons: maxW, newslope });
+                                // zaktualizuj treść tooltipa
+                                layer.setTooltipContent(
+                                    `Długość: ${newdistKm.toFixed(2)} km<br>
+                                    Czas: ${newtimeRes.formatted}`, 
+                                    { sticky: true }
+                                );
+                                layer.setPopupContent(
+                                    `<button id="edit-route">Edytuj</button>`
+                                );
+                                layer.openPopup();
+                            }
+                        };
+                    }, 50);
+                });
             }
+            /*if (layer instanceof L.Polyline) {
+                const coords = layer.getLatLngs().map(p => [p.lat, p.lng]);
+
+                // Formularz HTML w popupie
+                const formHTML = `
+                    <b>Właściwości trasy:</b><br/>
+                    Max wagony: <input type="number" id="form-max" min="0" placeholder="10"><br/>
+                    Aktualne wagony: <input type="number" id="form-act" min="0" placeholder="8"><br/>
+                    Nachylenie (%): <input type="number" step="0.1" id="form-slope" min="0" placeholder="2"><br/>
+                    <button id="form-save">Zapisz</button>
+                `;
+
+                layer.bindPopup(formHTML).openPopup();
+
+                layer.on("popupopen", () => {
+                    setTimeout(() => {
+                        const btn = document.getElementById("form-save");
+                        if (!btn) return;
+
+                        btn.onclick = () => {
+                            const maxW = parseInt(document.getElementById("form-max").value, 10);
+                            const actualW = parseInt(document.getElementById("form-act").value, 10);
+                            const slope = parseFloat(document.getElementById("form-slope").value);
+
+                            if (isNaN(maxW) || isNaN(actualW) || isNaN(slope)) {
+                                alert("Nieprawidłowe dane.");
+                                return;
+                            }
+
+                            const distKm = calculateDistanceKm(layer.getLatLngs());
+                            const timeRes = calculateTravelTime({
+                                distanceKm: distKm,
+                                slopePercent: slope,
+                                maxWagons: maxW,
+                                actualWagons: actualW,
+                                stops: stopsRef,
+                            });
+
+                            // Ustaw dane + tooltip
+                            setRouteParams({ maxWagons: maxW, slope });
+                            onCoords(coords);
+
+                            layer.bindTooltip(
+                                `Długość: ${distKm.toFixed(2)} km<br/>Czas: ${timeRes.formatted}`,
+                                { sticky: true }
+                            ).openTooltip();
+
+                            layer.closePopup(); // zamknij formularz po zapisaniu
+                        };
+                    }, 50);
+                });
+            }*/
+
             if (layer instanceof L.CircleMarker) {
                 const pt = layer.getLatLng();
+
                 const name = prompt("Nazwa przystanku:");
                 const inP = parseInt(prompt("Liczba wsiadających:"), 10);
                 const outP = parseInt(prompt("Liczba wysiadających:"), 10);
                 const sTime = (inP + outP) * 1;
                 if (!name) { map.removeLayer(layer); return; }
-                const stop = { type: "Feature", geometry: { type: "Point", coordinates: [pt.lng, pt.lat] }, properties: { name, stopTime: sTime, passengersIn: inP, passengersOut: outP } };
+                const stop = { 
+                    type: "Feature", 
+                    geometry: { type: "Point", coordinates: [pt.lng, pt.lat] }, 
+                    properties: { name, stopTime: sTime, passengersIn: inP, passengersOut: outP } };
                 stopsRef.push(stop);
                 onStops(prev => [...prev, stop]);
-                layer.bindPopup(`${name} (${sTime}s)`).openPopup();
+                layer.bindPopup(
+                    `<b>${name}</b><br/>Czas postoju: ${sTime}s<br/><button id="edit-stop">Edytuj</button>`
+                );
+                //Przycisk edycji przystanku
+                layer.on("popupopen", () => {
+                    setTimeout(() => {
+                        const btn = document.getElementById("edit-stop");
+                        if (!btn) return;
+
+                        btn.onclick = (ev) => {
+                            ev.stopPropagation();
+                            const newName = prompt("Nowa nazwa:", stop.properties.name);
+                            const newIn   = parseInt(prompt("Nowa liczba wsiadających:",  stop.properties.passengersIn), 10);
+                            const newOut  = parseInt(prompt("Nowa liczba wysiadających:", stop.properties.passengersOut), 10);
+                            const newTime = (newIn + newOut) * 1;
+                            if (newName && !isNaN(newIn) && !isNaN(newOut)) {
+                                // zaktualizuj właściwości
+                                stop.properties = {
+                                    name: newName,
+                                    passengersIn: newIn,
+                                    passengersOut: newOut,
+                                    stopTime: newTime,
+                                };
+                                // zaktualizuj treść tooltipa
+                                layer.setPopupContent(
+                                    `<b>${newName}</b><br/>Czas postoju: ${newTime}s<br/><button id="edit-stop">Edytuj</button>`
+                                );
+                                layer.openPopup();
+                            }
+                        };
+                    }, 50);
+                });
+
             }
+            /*if (layer instanceof L.CircleMarker) {
+                const pt = layer.getLatLng();
+
+                const formHTML = `
+                    <b>Właściwości przystanku:</b><br/>
+                    Nazwa przystanku: <input type="text" id="form-name" value="${name}"><br/>
+                    Liczba wsiadających: <input type="number" id="form-pass-in" value="${inP}"><br/>
+                    Liczba wysiadających: <input type="number" id="form-pass-out" value="${outP}"><br/>
+                    <button id="form-save-stop">Zapisz</button>
+                `;
+
+                const name = prompt("Nazwa przystanku:");
+                const inP = parseInt(prompt("Liczba wsiadających:"), 10);
+                const outP = parseInt(prompt("Liczba wysiadających:"), 10);
+                const sTime = (inP + outP) * 1;
+                if (!name) { map.removeLayer(layer); return; }
+                const stop = { 
+                    type: "Feature", 
+                    geometry: { type: "Point", coordinates: [pt.lng, pt.lat] }, 
+                    properties: { name, stopTime: sTime, passengersIn: inP, passengersOut: outP } };
+                stopsRef.push(stop);
+                onStops(prev => [...prev, stop]);
+                layer.bindPopup(
+                    `<b>${name}</b><br/>Czas postoju: ${sTime}s<br/><button id="edit-stop">Edytuj</button>`
+                );
+                //Przycisk edycji przystanku
+                layer.on("popupopen", () => {
+                    setTimeout(() => {
+                        const btn = document.getElementById("edit-stop");
+                        if (!btn) return;
+
+                        btn.onclick = (ev) => {
+                            ev.stopPropagation();
+                            const newName = prompt("Nowa nazwa:", stop.properties.name);
+                            const newIn   = parseInt(prompt("Nowa liczba wsiadających:",  stop.properties.passengersIn), 10);
+                            const newOut  = parseInt(prompt("Nowa liczba wysiadających:", stop.properties.passengersOut), 10);
+                            const newTime = (newIn + newOut) * 1;
+                            if (newName && !isNaN(newIn) && !isNaN(newOut)) {
+                                // zaktualizuj właściwości
+                                stop.properties = {
+                                    name: newName,
+                                    passengersIn: newIn,
+                                    passengersOut: newOut,
+                                    stopTime: newTime,
+                                };
+                                // zaktualizuj treść tooltipa
+                                layer.setPopupContent(
+                                    `<b>${newName}</b><br/>Czas postoju: ${newTime}s<br/><button id="edit-stop">Edytuj</button>`
+                                );
+                                layer.openPopup();
+                            }
+                        };
+                    }, 50);
+                });
+            }*/
             map.pm.disableDraw();
         });
     }, [map, onCoords, onStops, setRouteParams]);
@@ -119,28 +307,139 @@ function MapWithDrawing({ onCoords, onStops, setRouteParams }) {
     return null;
 }
 
+
 // Komponent do wyświetlania zapisanej trasy i edycji przystanków
-function MapLoader({ route, onTrainReady, showTrain }) {
+function MapLoader({ route, onTrainReady, showTrain, setRouteParams, onCoords }) {
+
     const map = useMap();
     const trainMarkerRef = useRef(null);
 
     useEffect(() => {
-        if (!map || !route) return;
+        if (!map) return;
         map.eachLayer(layer => {
-            if (layer instanceof L.Polyline || layer instanceof L.Marker || layer instanceof L.CircleMarker) map.removeLayer(layer);
+            if (layer instanceof L.Polyline || layer instanceof L.Marker || layer instanceof L.CircleMarker) {
+                map.removeLayer(layer);
+            }
         });
-
-        if (route.geojson?.coordinates) {
+        if (route?.geojson?.coordinates) {
             const coords = route.geojson.coordinates.map(([lng, lat]) => [lat, lng]);
-            const polyline = L.polyline(coords, { color: "blue" }).addTo(map);
+            const polyline = L.polyline(coords, { color: 'blue' }).addTo(map);
             map.fitBounds(polyline.getBounds());
+
+
+            const distKm = calculateDistanceKm(polyline.getLatLngs());
+            const slope = route.slope || 0;
+            const maxW = route.maxWagons || 5;
+            const actualW = route.actualWagons || 5;
+            const timeRes = calculateTravelTime({
+                distanceKm: distKm, 
+                slopePercent: slope, 
+                maxWagons: maxW, 
+                actualWagons: actualW, 
+                stops: route.stops || [], 
+            });
+
+            polyline.bindTooltip(
+                `Długość: ${distKm.toFixed(2)} km<br>
+                Czas: ${timeRes.formatted}`, 
+                { sticky: true }
+            );
+
+            //Przycisk edycji linii
+            const formHTML = `
+                <b>Właściwości trasy:</b><br/>
+                Max wagony: <input type="number" id="form-max" value="10"><br/>
+                Aktualne wagony: <input type="number" id="form-act" value="8"><br/>
+                Nachylenie (%): <input type="number" step="0.1" id="form-slope" value="2"><br/>
+                <button id="form-save">Zapisz</button>
+                `;
+
+            /*polyline.bindPopup(formHTML).openPopup();
+            polyline.on("popupopen", () => {
+                setTimeout(() => {
+                    const btn = document.getElementById("form-save");
+                    if (!btn) return;
+
+                    btn.onclick = () => {
+                        const maxW = parseInt(document.getElementById("form-max").value, 10);
+                        const actualW = parseInt(document.getElementById("form-act").value, 10);
+                        const slope = parseFloat(document.getElementById("form-slope").value);
+
+                        if (isNaN(maxW) || isNaN(actualW) || isNaN(slope)) {
+                            alert("Nieprawidłowe dane.");
+                            return;
+                        }
+
+                        const distKm = calculateDistanceKm(polyline.getLatLngs());
+                        const timeRes = calculateTravelTime({
+                            distanceKm: distKm,
+                            slopePercent: slope,
+                            maxWagons: maxW,
+                            actualWagons: actualW,
+                            stops: route?.stops || [],
+                        });
+
+                        // Ustaw dane + tooltip
+                        setRouteParams({ maxWagons: maxW, slope });
+                        onCoords(coords);
+
+                        polyline.setTooltipContent(
+                            `Długość: ${distKm.toFixed(2)} km<br/>Czas: ${timeRes.formatted}`,
+                            { sticky: true }
+                        ).openTooltip();
+
+                        polyline.closePopup(); // zamknij formularz po zapisaniu
+                    };
+                }, 50);
+            });*/
+            
+            polyline.bindPopup(
+                    `<button id="edit-route">Edytuj</button>`
+            );
+            polyline.on("popupopen", () => {
+                setTimeout(() => {
+                    const btn = document.getElementById("edit-route");
+                    if (!btn) return;
+
+                    btn.onclick = (ev) => {
+                        ev.stopPropagation();
+                        const newmaxW = parseInt(prompt("Nowa maksymalna liczba wagonów:"), 10);
+                        const newslope = parseFloat(prompt("Nowe nachylenie trasy (%):"));
+                        const newactualW = parseInt(prompt("Nowa aktualna liczba wagonów:"), 10);
+                        const newdistKm = calculateDistanceKm(polyline.getLatLngs());
+                        const newtimeRes = calculateTravelTime({ 
+                            distanceKm: newdistKm, 
+                            slopePercent: newslope, 
+                            maxWagons: newmaxW, 
+                            actualWagons: newactualW, 
+                            stops: route.stops || [], 
+                        });
+                        if ( !isNaN(newmaxW) && !isNaN(newslope) && !isNaN(newactualW)) {
+                            // zaktualizuj właściwości
+                            setRouteParams({ maxWagons: newmaxW, newslope });
+                            // zaktualizuj treść tooltipa
+                            polyline.setTooltipContent(
+                                `Długość: ${newdistKm.toFixed(2)} km<br>
+                                Czas: ${newtimeRes.formatted}`, 
+                                { sticky: true }
+                            );
+                            polyline.setPopupContent(
+                                `<button id="edit-route">Edytuj</button>`
+                            );
+                            polyline.openPopup();
+                        }
+                    };
+                }, 50);
+            });
+
             if (showTrain && coords.length > 0) {
-                const trainIcon = new L.Icon({ iconUrl: "/train.png", iconSize: [32, 32], iconAnchor: [16, 16] });
-                const marker = L.marker(coords[0], { icon: trainIcon }).addTo(map);
+                const icon = new L.Icon({ iconUrl: '/train.png', iconSize: [32, 32], iconAnchor: [16, 16] });
+                const marker = L.marker(coords[0], { icon }).addTo(map);
                 trainMarkerRef.current = marker;
                 onTrainReady({ marker, coords });
             }
         }
+
 
         if (Array.isArray(route.stops)) {
             route.stops.forEach((stop, idx) => {
@@ -149,170 +448,228 @@ function MapLoader({ route, onTrainReady, showTrain }) {
                 let stopTime = stop.properties?.stopTime || 0;
                 const icon = L.divIcon({ className: 'custom-stop-icon', html: '<div style="width:14px;height:14px;background:red;border-radius:50%;border:2px solid white;"></div>', iconSize: [14, 14], iconAnchor: [7, 7] });
                 const marker = L.marker([lat, lng], { icon }).addTo(map);
-                marker.bindPopup(`<b>${name}</b><br/>Czas postoju: ${stopTime}s<br/><button id=\`edit-${idx}\`>Edytuj</button>`);
-                marker.on("click", e => { L.DomEvent.stopPropagation(e.originalEvent); marker.openPopup(); });
-                marker.on("popupopen", () => { setTimeout(() => { const btn = document.getElementById(`edit-${idx}`); if (btn) btn.onclick = ev => { ev.stopPropagation(); const nName = prompt("Nowa nazwa przystanku:", name); const nTime = prompt("Nowy czas postoju (s):", stopTime); if (nName !== null && nTime !== null) { stop.properties.name = nName; stop.properties.stopTime = parseInt(nTime); name = nName; stopTime = parseInt(nTime); marker.setPopupContent(`<b>${nName}</b><br/>Czas postoju: ${nTime}s<br/><button id=\`edit-${idx}\`>Edytuj</button>`); marker.openPopup(); } }; }, 100); });
+
+                marker.pm.enable({ draggable: true });
+                marker.on("pm:dragend", () => {
+                    const newLatLng = marker.getLatLng();
+                    stop.geometry.coordinates = [newLatLng.lng, newLatLng.lat];
+                });
+                //Przycisk edycji stacji
+                marker.bindPopup(
+                    `<b>${name}</b><br/>Czas postoju: ${stopTime}s<br/><button id="edit-${idx}">Edytuj</button>`
+                );
+                marker.on("click", e => { marker.openPopup(); });
+                marker.on("popupopen", () => {
+                    setTimeout(() => {
+                        const btn = document.getElementById(`edit-${idx}`);
+                        if (btn) {
+                            btn.onclick = (ev) => {
+                                ev.stopPropagation();
+                                const newName = prompt("Nowa nazwa przystanku:", name);
+                                const newIn = parseInt(prompt("Nowa liczba wsiadających:", stop.properties.passengersIn || 0), 10);
+                                const newOut = parseInt(prompt("Nowa liczba wysiadających:", stop.properties.passengersOut || 0), 10);
+                                const newStopTime = (newIn + newOut) * 1;
+                                if (newName && !isNaN(newIn) && !isNaN(newOut)) {
+                                    stop.properties.name = newName;
+                                    stop.properties.passengersIn = newIn;
+                                    stop.properties.passengersOut = newOut;
+                                    stop.properties.stopTime = newStopTime;
+                                    name = newName;
+                                    stopTime = newStopTime;
+                                    marker.setPopupContent(
+                                        `<b>${newName}</b><br/>Czas postoju: ${newStopTime}s<br/><button id="edit-${idx}">Edytuj</button>`
+                                    );
+                                    marker.openPopup();
+                                }
+                            };
+                        }
+                    }, 100);
+                });
+
             });
-        }
+            /*
+            const marker = L.marker([lat, lng], { icon }).addTo(map);
+            marker.bindPopup(`<b>${name}</b><br/>Time: ${stopTime}s<br/><button id="edit-${idx}">Edit</button>`);
+            marker.on('popupopen', () => {
+                setTimeout(() => {
+                    const btn = document.getElementById(`edit-${idx}`);
+                    if (btn) btn.onclick = ev => {
+                        ev.stopPropagation();
+                        const newName = prompt('New name:', name);
+                        const newTime = prompt('New time (s):', stopTime);
+                        if (newName !== null && newTime !== null) {
+                            stop.properties.name = newName;
+                            stop.properties.stopTime = parseInt(newTime, 10);
+                            name = newName;
+                            stopTime = parseInt(newTime, 10);
+                            marker.setPopupContent(`<b>${name}</b><br/>Time: ${stopTime}s<br/><button id="edit-${idx}">Edit</button>`);
+                            marker.openPopup();
+                        }
+                    };
+                }, 100);
+            });*/
+        };
     }, [map, route, onTrainReady, showTrain]);
 
     return null;
 }
 
-// Komponent narzędzi rysowania tras i przystanków (D_Doktor)
 function MapDrawingTools({ onDraw }) {
     const map = useMap();
-
     useEffect(() => {
         if (!map) return;
-
         map.pm.addControls({
-            position: "topleft",
-            drawCircle: false,
-            drawMarker: false,
-            drawPolygon: false,
-            drawRectangle: false,
-            drawText: false,
-            drawPolyline: true,
-            drawCircleMarker: true,
+            position: 'topleft', drawCircle: false, drawMarker: false, drawPolygon: false,
+            drawRectangle: false, drawText: false, drawPolyline: true, drawCircleMarker: true
         });
-
-        map.on("pm:create", (e) => {
-            if (onDraw) onDraw(e);
-            map.pm.disableDraw();
-        });
+        map.on('pm:create', e => { onDraw && onDraw(e); map.pm.disableDraw(); });
     }, [map, onDraw]);
-
     return null;
 }
 
 export default function App() {
-    const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
+    // Auth
+    const [token, setToken] = useState(localStorage.getItem('token'));
+    const [username, setUsername] = useState(null);
+    const [role, setRole] = useState(null);
+    // Routes
+    const [routes, setRoutes] = useState([]);
+    const [selRoute, setSelRoute] = useState(null);
+    const [showRouteList, setShowRouteList] = useState(false);
+    // Theme & menus
+    const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
     const [showMainMenu, setShowMainMenu] = useState(false);
     const [showMapMenu, setShowMapMenu] = useState(false);
-    const [activeTab, setActiveTab] = useState("konto");
-    const [routeName, setRouteName] = useState("");
+    const [activeTab, setActiveTab] = useState('account');
+    // Drawing & simulation
+    const [routeName, setRouteName] = useState('');
     const [drawnCoords, setDrawnCoords] = useState([]);
     const [drawnStops, setDrawnStops] = useState([]);
     const [coords, setCoords] = useState(null);
     const [stops, setStops] = useState([]);
     const [routeParams, setRouteParams] = useState({ maxWagons: null, slope: null });
-    const [runSim, setRunSim] = useState(false);
-    const [paused, setPaused] = useState(false);
-    const [trainType, setTrainType] = useState("passenger");
-    const [allRoutes, setAllRoutes] = useState([]);
-    const [selectedRoute, setSelectedRoute] = useState(null);
-    const [trainMarker, setTrainMarker] = useState(null);
+    const [trainObj, setTrainObj] = useState(null);
     const [isRunning, setIsRunning] = useState(false);
-    const [info, setInfo] = useState("");
+    const [info, setInfo] = useState('');
     const intervalRef = useRef(null);
 
+    // Apply theme
     useEffect(() => {
-        document.body.className = "";
+        document.body.className = '';
         document.body.classList.add(`${theme}-theme`);
-        localStorage.setItem("theme", theme);
+        localStorage.setItem('theme', theme);
     }, [theme]);
 
-    const handleSaveRoute = async () => {
-        if (!routeName || drawnCoords.length === 0) return alert("Podaj nazwę i narysuj trasę.");
+    // On token change: decode and load
+    useEffect(() => {
+        if (!token) return;
         try {
-            await fetch("http://localhost:5000/routes", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ name: routeName, route: drawnCoords, stops: drawnStops }),
-            });
-            alert("Zapisano trasę");
-            setRouteName(""); setDrawnCoords([]); setDrawnStops([]);
-            handleLoadRoutes();
-        } catch (err) {
-            alert("Błąd zapisu trasy");
+            const p = JSON.parse(atob(token.split('.')[1]));
+            setUsername(p.username);
+            setRole(p.role);
+            loadRoutes();
+        } catch {
+            setUsername(null);
+            setRole(null);
         }
+    }, [token]);
+
+    // Load routes
+    const loadRoutes = async () => {
+        const res = await fetch('http://localhost:5000/routes', {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) {
+            alert(await res.text());
+            return false;
+        }
+        setRoutes(await res.json());
+        return true;
     };
 
-    const handleLoadRoutes = async () => {
-        try {
-            const resp = await fetch("http://localhost:5000/routes");
-            const data = await resp.json(); setAllRoutes(data);
-        } catch {
-            alert("Nie udało się pobrać tras");
+    // Show/hide route select
+    const handleShowRoutes = async () => {
+        if (!showRouteList) {
+            const ok = await loadRoutes();
+            if (!ok) return;
         }
+        setShowRouteList(!showRouteList);
+    };
+
+    // Auth handlers
+    const handleAuth = tok => { localStorage.setItem('token', tok); setToken(tok); };
+    const handleLogout = () => {
+        localStorage.removeItem('token');
+        setToken(null); setUsername(null); setRole(null); setRoutes([]);
+    };
+
+    // CRUD handlers
+    const handleSaveRoute = async () => {
+        if (!routeName || drawnCoords.length === 0) return alert('Provide name and draw route');
+        const res = await fetch('http://localhost:5000/routes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ name: routeName, route: drawnCoords, stops: drawnStops, max_wagons: routeParams.maxWagons, slope: routeParams.slope })
+        });
+        if (!res.ok) return alert(await res.text());
+        alert('Route saved'); setRouteName(''); setDrawnCoords([]); setDrawnStops([]); loadRoutes();
     };
 
     const handleDeleteRoute = async () => {
-        if (!selectedRoute) return alert("Wybierz trasę do usunięcia");
-        try {
-            await fetch(`http://localhost:5000/routes/${selectedRoute.id}`, { method: "DELETE" });
-            alert("Usunięto trasę"); setSelectedRoute(null);
-            handleLoadRoutes();
-        } catch {
-            alert("Błąd usuwania");
-        }
+        const res = await fetch(`http://localhost:5000/routes/${selRoute.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return alert(await res.text());
+        alert('Route deleted'); setSelRoute(null); loadRoutes();
     };
 
-    const handleStartTrain = () => {
-        if (!trainMarker) return;
-        let i = 0; setIsRunning(true);
-        intervalRef.current = setInterval(() => {
-            if (!trainMarker.marker || i >= trainMarker.coords.length) { clearInterval(intervalRef.current); setIsRunning(false); return; }
-            trainMarker.marker.setLatLng(trainMarker.coords[i]); i++;
-        }, 500);
-    };
-
+    const handleStartTrain = () => { if (!trainObj) return; let i = 0; setIsRunning(true); intervalRef.current = setInterval(() => { if (!trainObj.marker || i >= trainObj.coords.length) { clearInterval(intervalRef.current); setIsRunning(false); return; } trainObj.marker.setLatLng(trainObj.coords[i]); i++; }, 500); };
     const handlePauseTrain = () => { clearInterval(intervalRef.current); setIsRunning(false); };
+    const handleResetTrain = () => { if (trainObj?.marker) trainObj.marker.setLatLng(trainObj.coords[0]); handlePauseTrain(); };
 
-    const handleResetTrain = () => { if (trainMarker && trainMarker.marker) trainMarker.marker.setLatLng(trainMarker.coords[0]); handlePauseTrain(); };
-
-    useEffect(() => {
-        if (!selectedRoute || !selectedRoute.geojson?.coordinates) return;
-        const coordsArr = selectedRoute.geojson.coordinates;
-        let dist = 0;
-        for (let i = 1; i < coordsArr.length; i++) {
-            const [lng1, lat1] = coordsArr[i - 1]; const [lng2, lat2] = coordsArr[i];
-            const dLat = (lat2 - lat1) * Math.PI / 180; const dLng = (lng2 - lng1) * Math.PI / 180;
-            const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); dist += 6371 * c;
-        }
-        setInfo(`Długość trasy: ${dist.toFixed(2)} km`);
-    }, [selectedRoute]);
+    if (!token) return <AuthForm onAuth={handleAuth} />;
 
     return (
         <div className="app-container">
-            <MapContainer center={[49.62, 20.7]} zoom={13} style={{ height: "100%", width: "100%" }}>
+            <MapContainer center={[49.62, 20.7]} zoom={13} style={{ height: '100%', width: '100%' }}>
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                 <MapWithDrawing onCoords={setCoords} onStops={setStops} setRouteParams={setRouteParams} />
-                <Simulation polylineCoords={coords} stops={stops} run={runSim} paused={paused} trainType={trainType} routeParams={routeParams} />
-                <MapLoader route={selectedRoute} onTrainReady={setTrainMarker} showTrain={true} />
+                <Simulation polylineCoords={coords} stops={stops} run={isRunning} paused={!isRunning} trainType="passenger" routeParams={routeParams} />
+                <MapLoader route={selRoute} onTrainReady={setTrainObj} showTrain />
                 <MapDrawingTools onDraw={e => {
                     const geo = e.layer.toGeoJSON();
-                    if (geo.geometry.type === "LineString") setDrawnCoords(geo.geometry.coordinates);
-                    if (geo.geometry.type === "Point") {
-                        const stop = { type: "Feature", geometry: geo.geometry, properties: { name: "Nowy przystanek", stopTime: 0 } };
-                        setDrawnStops(prev => [...prev, stop]);
+                    if (geo.geometry.type === 'LineString') setDrawnCoords(geo.geometry.coordinates);
+                    if (geo.geometry.type === 'Point') {
+                        setDrawnStops(prev => [...prev, { type: 'Feature', geometry: geo.geometry, properties: { name: 'New Stop', stopTime: 0 } }]);
                     }
                 }} />
             </MapContainer>
 
             <div className="top-buttons">
-                <button onClick={() => { setShowMainMenu(!showMainMenu); setShowMapMenu(false); }} className="top-btn">Menu</button>
-                <button onClick={() => { setShowMapMenu(!showMapMenu); setShowMainMenu(false); }} className="top-btn">Mapa</button>
+                <button onClick={() => { setShowMainMenu(!showMainMenu); setShowMapMenu(false); }}>Menu</button>
+                <button onClick={() => { setShowMapMenu(!showMapMenu); setShowMainMenu(false); }}>Map</button>
             </div>
 
             {showMainMenu && (
                 <div className={`sidebar ${theme}-theme`}>
                     <div className="tab-buttons">
-                        <button onClick={() => setActiveTab("konto")}>Konto</button>
-                        <button onClick={() => setActiveTab("mapy")}>Mapy</button>
-                        <button onClick={() => setActiveTab("wyglad")}>Wyglad</button>
+                        <button onClick={() => setActiveTab('account')}>Account</button>
+                        <button onClick={() => setActiveTab('map')}>Map</button>
+                        <button onClick={() => setActiveTab('theme')}>Theme</button>
                     </div>
-                    {activeTab === "konto" && <AuthForm />}
-                    {activeTab === "mapy" && <p>Import map z internetu - wkrótce</p>}
-                    {activeTab === "wyglad" && (
-                        <div>
-                            <label htmlFor="theme-select">Wybierz motyw:</label>
+                    {activeTab === 'account' && (
+                        <div style={{ padding: '1rem' }}>
+                            <p>Zalogowany jako:</p>
+                            <h3>{username}</h3>
+                            <button onClick={handleLogout}>Logout</button>
+                        </div>
+                    )}
+                    {activeTab === 'map' && <p>Map settings coming soon...</p>}
+                    {activeTab === 'theme' && (
+                        <div style={{ padding: '1rem' }}>
+                            <label htmlFor="theme-select">Select theme:</label>
                             <select id="theme-select" value={theme} onChange={e => setTheme(e.target.value)}>
-                                <option value="light">Jasny</option>
-                                <option value="dark">Ciemny</option>
-                                <option value="gray">Szary</option>
+                                <option value="light">Light</option>
+                                <option value="dark">Dark</option>
+                                <option value="gray">Gray</option>
                             </select>
                         </div>
                     )}
@@ -321,20 +678,24 @@ export default function App() {
 
             {showMapMenu && (
                 <div className={`mapmenu ${theme}-theme`}>
-                    <h3>Opcje mapy</h3>
-                    <input value={routeName} onChange={e => setRouteName(e.target.value)} placeholder="Nazwa nowej trasy" />
-                    <button onClick={handleSaveRoute}>Zapisz trasę</button>
-                    <button onClick={handleLoadRoutes}>Odśwież trasy</button>
-                    {allRoutes.length > 0 && (
-                        <select onChange={e => setSelectedRoute(allRoutes.find(r => r.id.toString() === e.target.value))}>
-                            <option value="">Wybierz trasę</option>
-                            {allRoutes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    <h3>Map Options</h3>
+                    <input value={routeName} onChange={e => setRouteName(e.target.value)} placeholder="Route name" style={{ width: '100%', marginBottom: '0.5rem' }} />
+                    <button onClick={handleSaveRoute} style={{ width: '100%', marginBottom: '0.5rem' }}>Save route</button>
+                    <button onClick={loadRoutes} style={{ width: '100%', marginBottom: '0.5rem' }}>Refresh routes</button>
+
+                    <button onClick={handleShowRoutes} style={{ width: '100%', marginBottom: '0.5rem' }}>Wybierz trasę</button>
+
+                    {showRouteList && routes.length > 0 && (
+                        <select onChange={e => setSelRoute(routes.find(r => r.id.toString() === e.target.value))} style={{ width: '100%', marginBottom: '0.5rem' }} defaultValue="">
+                            <option value="" disabled>-- wybierz trasę --</option>
+                            {routes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                         </select>
                     )}
-                    <button onClick={handleDeleteRoute}>Usuń trasę</button>
-                    <button onClick={handleStartTrain} disabled={!trainMarker || isRunning}>Start</button>
-                    <button onClick={handlePauseTrain} disabled={!isRunning}>Pauza</button>
-                    <button onClick={handleResetTrain}>Reset</button>
+
+                    {role === 'admin' && <button onClick={handleDeleteRoute} style={{ width: '100%', marginBottom: '0.5rem', background: 'red', color: 'white' }}>Delete route</button>}
+                    <button onClick={handleStartTrain} disabled={!trainObj || isRunning} style={{ width: '100%', marginBottom: '0.25rem' }}>▶ Start</button>
+                    <button onClick={handlePauseTrain} disabled={!isRunning} style={{ width: '100%', marginBottom: '0.25rem' }}>⏸ Pause</button>
+                    <button onClick={handleResetTrain} style={{ width: '100%', marginBottom: '0.5rem' }}>🔁 Reset</button>
                     <div className="info">{info}</div>
                 </div>
             )}
