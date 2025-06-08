@@ -1,0 +1,29 @@
+Podsumowanie zmian w Railway Route Planner - Implementacja wyboru typu pociągu
+
+1. Dodano wybór typu pociągu:
+   - Dodano przełącznik między pociągiem pasażerskim (train2.png) a towarowym (train.png)
+   - Wybór jest zapisywany w routeParams i persystowany z trasą
+   - Domyślnie ustawiony jest pociąg pasażerski
+
+2. Implementacja w interfejsie:
+   - Dodano sekcję "Train Type" w menu mapy
+   - Dwa przyciski: "Passenger" i "Cargo"
+   - Aktywny wybór jest podświetlony na zielono
+   - Ikony pociągów zmieniają się dynamicznie przy zmianie typu
+
+3. Zmiany w komponentach:
+   - App.js: Dodano kontrolki wyboru typu pociągu w menu mapy
+   - MapLoader.js: Zmodyfikowano logikę ładowania właściwej ikony pociągu
+   - Simulation.js: Dostosowano animację do wybranego typu pociągu
+
+4. Wizualne ulepszenia:
+   - Zwiększono rozmiar ikon pociągów z 32x32 do 40x40 pikseli
+   - Dostosowano punkty kotwiczenia ikon dla lepszego wycentrowania
+   - Zachowano proporcje względem innych elementów mapy
+
+5. Integracja z istniejącymi funkcjami:
+   - Wybór typu pociągu jest zapisywany wraz z trasą
+   - Typ pociągu jest wczytywany przy ładowaniu zapisanej trasy
+   - Animacja używa odpowiedniej ikony podczas symulacji
+
+Wszystkie zmiany zostały pomyślnie zaimplementowane i przetestowane, zapewniając płynne działanie nowej funkcjonalności w aplikacji. 

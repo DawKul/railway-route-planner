@@ -11,3 +11,18 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+<<<<<<< HEAD
+=======
+
+.train-icon {
+    /* Usuwam style związane z animacją pociągu */
+}
+
+.train-icon.reversed img {
+    /* Usuwam style związane z animacją pociągu */
+}
+
+.leaflet-marker-icon {
+    /* Usuwam style związane z animacją pociągu */
+}
+>>>>>>> D_Kulig

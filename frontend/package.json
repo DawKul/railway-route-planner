@@ -9,6 +9,11 @@
     "@testing-library/react": "^16.2.0",
     "@testing-library/user-event": "^13.5.0",
     "leaflet": "^1.9.4",
+<<<<<<< HEAD
+=======
+    "leaflet-polylinedecorator": "^1.6.0",
+    "leaflet-rotatedmarker": "^0.2.0",
+>>>>>>> D_Kulig
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-leaflet": "^5.0.0",
@@ -39,5 +44,14 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+<<<<<<< HEAD
+=======
+  },
+  "devDependencies": {
+    "@babel/parser": "^7.27.2",
+    "@babel/traverse": "^7.27.1",
+    "@babel/types": "^7.27.1",
+    "recast": "^0.23.11"
+>>>>>>> D_Kulig
   }
 }
