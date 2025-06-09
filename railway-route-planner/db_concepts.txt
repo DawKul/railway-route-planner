@@ -1,0 +1,132 @@
+# Koncepcje bazodanowe w projekcie Railway Route Planner
+
+## 1. ORM (Object-Relational Mapping)
+ORM to technika programowania pozwalająca na mapowanie obiektów w kodzie na rekordy w bazie danych. W naszym projekcie używamy Sequelize jako ORM dla Node.js.
+
+Przykład użycia ORM (z kodu):
+```javascript
+// Definicja modelu trasy
+const Route = sequelize.define('Route', {
+    route_id: {
+        type: DataTypes.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+    },
+    name: DataTypes.STRING,
+    user_id: DataTypes.INTEGER,
+    created_at: DataTypes.DATE,
+    updated_at: DataTypes.DATE
+});
+
+// Użycie ORM do zapisu trasy
+await Route.create({
+    name: routeData.name,
+    user_id: userId,
+    // ... inne pola
+});
+```
+
+## 2. RAW QUERY (Surowe zapytania SQL)
+Czasami używamy bezpośrednich zapytań SQL, gdy potrzebujemy bardziej złożonej logiki lub specyficznych funkcji PostGIS.
+
+Przykład RAW QUERY (z kodu):
+```sql
+-- Zapytanie do pobrania tras z geometrią
+SELECT 
+    r.route_id, 
+    r.name,
+    ST_AsGeoJSON(s.geom) as geometry
+FROM routes r
+JOIN segments s ON r.route_id = s.route_id
+WHERE r.user_id = $1;
+```
+
+## 3. Transakcje
+Transakcje zapewniają atomowość operacji na bazie danych. Używamy ich gdy potrzebujemy wykonać kilka powiązanych operacji jako jedną całość.
+
+Przykład transakcji:
+```javascript
+const transaction = await sequelize.transaction();
+try {
+    // Zapisz trasę
+    const route = await Route.create({
+        name: routeData.name,
+        user_id: userId
+    }, { transaction });
+
+    // Zapisz przystanki
+    await Stop.bulkCreate(routeData.stops.map(stop => ({
+        route_id: route.id,
+        name: stop.name,
+        // ... inne pola
+    })), { transaction });
+
+    await transaction.commit();
+} catch (error) {
+    await transaction.rollback();
+    throw error;
+}
+```
+
+## 4. Triggery
+Triggery to automatyczne akcje wykonywane w bazie danych w odpowiedzi na określone zdarzenia.
+
+Przykład triggera (z pliku schema.sql):
+```sql
+CREATE TRIGGER update_route_timestamp
+    BEFORE UPDATE ON routes
+    FOR EACH ROW
+    EXECUTE FUNCTION update_timestamp();
+```
+
+Ten trigger automatycznie aktualizuje pole `updated_at` za każdym razem, gdy trasa jest modyfikowana.
+
+## 5. Procedury składowane
+Procedury składowane to funkcje przechowywane w bazie danych, które mogą być wywoływane z poziomu aplikacji.
+
+Przykład procedury (jeśli jest używana w projekcie):
+```sql
+CREATE OR REPLACE PROCEDURE calculate_route_statistics(
+    route_id INTEGER,
+    OUT total_distance DECIMAL,
+    OUT total_stops INTEGER
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Oblicz całkowitą długość trasy
+    SELECT SUM(ST_Length(geom::geography))/1000 INTO total_distance
+    FROM segments
+    WHERE route_id = $1;
+
+    -- Policz przystanki
+    SELECT COUNT(*) INTO total_stops
+    FROM stops
+    WHERE route_id = $1;
+END;
+$$;
+```
+
+## 6. Funkcje
+Funkcje bazodanowe to reużywalne bloki kodu SQL, które mogą zwracać wartości.
+
+Przykład funkcji:
+```sql
+CREATE OR REPLACE FUNCTION update_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+## Podsumowanie
+W projekcie Railway Route Planner wykorzystujemy różne koncepcje bazodanowe do efektywnego zarządzania danymi:
+- ORM (Sequelize) do wygodnej pracy z bazą danych w kodzie JavaScript
+- RAW QUERY do złożonych operacji i wykorzystania funkcji PostGIS
+- Transakcje do zachowania spójności danych
+- Triggery do automatycznej aktualizacji timestampów
+- Procedury i funkcje do enkapsulacji logiki bazodanowej
+
+Każda z tych koncepcji ma swoje zastosowanie i pomaga w utrzymaniu czystego i wydajnego kodu. 

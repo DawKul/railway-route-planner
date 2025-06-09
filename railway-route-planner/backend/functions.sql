@@ -1,0 +1,1 @@
+-- SQL functions like calculate_total_stop_time

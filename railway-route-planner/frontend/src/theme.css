@@ -1,0 +1,240 @@
+﻿
+body {
+    margin: 0;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+.app-container {
+    height: 100vh;
+    width: 100vw;
+    position: relative;
+}
+
+.login-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    background-color: #f5f5f5;
+}
+
+.login-box {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    max-width: 400px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+    .login-box h2 {
+        text-align: center;
+        margin-bottom: 1.5rem;
+        color: #1976d2;
+    }
+
+.auth-input {
+    width: 100%;
+    padding: 0.6rem;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+}
+
+.auth-button {
+    width: 100%;
+    padding: 0.6rem;
+    font-size: 1rem;
+    font-weight: bold;
+    border-radius: 6px;
+    background-color: #1976d2;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+    .auth-button:hover {
+        background-color: #125abf;
+    }
+
+.mapmenu,
+.sidebar,
+.admin-panel {
+    position: absolute;
+    top: 48px;
+    right: 10px;
+    z-index: 1000;
+    width: 260px;
+    padding: 1rem;
+    border-radius: 12px;
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+}
+
+.top-buttons {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1100;
+    display: flex;
+    gap: 0.5rem;
+}
+
+button {
+    padding: 0.4rem 0.8rem;
+    border-radius: 8px;
+    border: none;
+    background-color: #1976d2;
+    color: white;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+    button:hover {
+        background-color: #1565c0;
+    }
+
+input,
+select {
+    width: 100%;
+    padding: 0.4rem;
+    margin-bottom: 0.5rem;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+}
+
+.light-theme {
+    background-color: #fff;
+    color: #000;
+}
+
+.dark-theme {
+    background-color: #1e1e1e;
+    color: #eee;
+}
+
+.gray-theme {
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+.sidebar .tab-buttons,
+.admin-panel .tab-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+    .sidebar .tab-buttons button,
+    .admin-panel .tab-buttons button {
+        flex: 1;
+        margin: 0 0.25rem;
+        background-color: #eee;
+        color: #333;
+    }
+
+        .sidebar .tab-buttons button:hover,
+        .admin-panel .tab-buttons button:hover {
+            background-color: #ddd;
+        }
+
+.sidebar .account-panel {
+    padding: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.admin-panel {
+    padding: 1rem;
+    border-radius: 12px;
+    background-color: white;
+    color: black;
+    box-shadow: 0 0 12px rgba(0, 0, 0, 0.2);
+}
+
+    .admin-panel ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .admin-panel li {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+.admin-route {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.admin-route-info {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.95rem;
+}
+
+    .admin-route-info strong {
+        font-weight: 600;
+    }
+
+.admin-route button {
+    background-color: #e53935;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+    .admin-route button:hover {
+        background-color: #c62828;
+    }
+
+.admin-panel li button {
+    margin-left: 0.5rem;
+    font-size: 0.8rem;
+    padding: 0.3rem 0.6rem;
+    background-color: #d32f2f;
+    color: white;
+}
+
+    .admin-panel li button:hover {
+        background-color: #b71c1c;
+    }
+
+.dark-theme .login-box {
+    background-color: #1e1e1e;
+    color: white;
+}
+
+.gray-theme .login-box {
+    background-color: #e8e8e8;
+    color: #222;
+}
+
+.dark-theme .admin-panel {
+    background-color: #1e1e1e;
+    color: #fff;
+}
+
+.gray-theme .admin-panel {
+    background-color: #f0f0f0;
+    color: #222;
+}
+
+.info {
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    opacity: 0.7;
+}
